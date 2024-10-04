@@ -4,6 +4,18 @@ import re
 import os
 import argparse
 import unicodedata 
+from google.cloud import translate_v2 as translate
+
+
+
+
+
+
+# Compiling regular expressions used throughout the script
+box_folder_regex = re.compile(r'[^\d_]')  # Regex to clean up BOX_FOLDER, allows only digits and underscores
+collection_number_regex = re.compile(r'[^\w\s]')  # Example regex for COLLECTION_NUMBER, allows alphanumeric characters
+title_regex = re.compile(r'[^\w\s,.]')  # Allows letters, numbers, spaces, periods, and commas
+clean_invitation_regex = re.compile(r'\binvitaci[oó]n\b', re.IGNORECASE)  # Regex to catch invitation typos in Spanish
 
 # Argument parsing to accept the file name as input
 parser = argparse.ArgumentParser(description="Process an Excel file")
@@ -46,6 +58,7 @@ proper_names_df = pd.read_excel('ProperNames.xlsx')  # Adjust file path as neede
 
 proper_names_list = proper_names_df['PROPER AUTHORIZED NAMES'].str.strip().tolist()  # Create a list of proper names
 
+translate_client = translate.Client()
 
 
 
@@ -92,6 +105,17 @@ def create_full_folder_file_path(digital_identifier_col):
     return digital_identifier_col.apply(format_path)
 
 
+
+
+def translate_text(text, target_language='es'):
+    if isinstance(text, str) and text.strip() != "":
+        # Translate the text using the Google API
+        translation = translate_client.translate(text, target_language=target_language)
+        return translation['translatedText']
+    return text  # Return original if no text to translate
+
+
+
 def normalize_accents(text):
     """
     Normalize Spanish accents for proper display of words like 'invitación'
@@ -110,22 +134,13 @@ def clean_title(col, language="Spanish"):
     # Define a list of proper names to avoid changing
     proper_names_list = ['Maria', 'Clotilde', 'Fausto', 'Manuel', 'Adela']  # Add more names here
 
-    # Define common terms that should be converted to Spanish
-    common_terms_translation = {
-        'wedding': 'boda',
-        'baptism': 'bautizo',
-        'invitation': 'invitación',
-        'marriage': 'matrimonio',
-        # Add other terms as necessary
-    }
-
     def clean_value(x):
         if pd.isnull(x):
             return x
         x = str(x).strip()
 
         # Define words that should not be capitalized (prepositions, articles, etc.)
-        lowercase_words = ['a', 'de', 'para', 'por', 'en', 'con', 'y', 'o', 'una', 'invitación']
+        lowercase_words = ['a', 'de', 'para', 'por', 'en', 'con', 'y', 'o', 'una']
 
         def capitalize_names(text):
             words = text.split()
@@ -141,25 +156,21 @@ def clean_title(col, language="Spanish"):
                     capitalized_words.append(word.lower())
             return " ".join(capitalized_words)
 
-        def translate_common_terms(text):
-            words = text.split()
-            translated_words = []
-            for word in words:
-                # Replace common terms with their Spanish equivalent, if any
-                translated_word = common_terms_translation.get(word.lower(), word)
-                translated_words.append(translated_word)
-            return " ".join(translated_words)
+        def translate_using_api(text):
+            # Use Google Translate to translate to Spanish (es) from English (en)
+            if language.lower() == 'spanish':
+                translation = translate_client.translate(text, target_language='es')
+                return translation['translatedText']
+            return text
 
-        # Apply capitalization and manual term translations
+        # Apply capitalization
         x = capitalize_names(x)
-        x = translate_common_terms(x)
+        # Use Google Translate for automatic translation
+        x = translate_using_api(x)
 
         return x
 
     return col.apply(clean_value)
-
-
-
 
 
 
@@ -197,7 +208,6 @@ def clean_title_english(col):
         return x
 
     return col.apply(clean_value)
-
 
 
 
@@ -424,28 +434,42 @@ def fill_constant_values(df):
 
 def clean_columns_in_sheets(xls, column_cleaning_rules):
     for sheet_name in xls.sheet_names:
-        if sheet_name == "GO_Technical Metadata":  # Skip this sheet
-            continue
-
         df = pd.read_excel(xls, sheet_name=sheet_name)
-
-        # Fill constant values for specific columns
-        df = fill_constant_values(df)
-
+        
+        # Ignore the GO_Technical metadata sheet
+        if sheet_name == "GO_Technical metadata":
+            print(f"Skipping sheet: {sheet_name}")
+            continue
+        
+        print(f"Processing sheet: {sheet_name}")
+        
         # Fill any missing values with blanks and replace "no data" with blanks
         df = df.fillna('').replace('no data', '')
-
-        # Apply column cleaning functions
+        
+        # Apply cleaning functions
         for column_name, cleaning_func in column_cleaning_rules.items():
             if column_name in df.columns:
-                # Check if the function is 'clean_dates' since it needs row-wise application
+                print(f"Applying cleaning to column: {column_name}")
+                
+                # If column is related to 'DATE', apply row-wise cleaning
                 if 'DATE' in column_name:
-                    df = df.apply(lambda row: cleaning_func(row), axis=1)
+                    # Debugging: inspect what the cleaning function returns
+                    df[column_name] = df.apply(lambda row: debug_cleaning_func(row, cleaning_func), axis=1)
                 else:
+                    # Apply column-wise cleaning
                     df[column_name] = df[column_name].apply(cleaning_func)
-
+                    
         # Save cleaned DataFrame
         cleaned_sheets[sheet_name] = df
+
+def debug_cleaning_func(row, cleaning_func):
+    result = cleaning_func(row)
+    print(f"Row: {row}, Result: {result}")  # Debug output
+    return result
+
+
+
+
 
 
 
