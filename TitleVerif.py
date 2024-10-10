@@ -4,11 +4,6 @@ import re
 import os
 import argparse
 import unicodedata 
-from google.cloud import translate_v2 as translate
-
-
-
-
 
 
 # Compiling regular expressions used throughout the script
@@ -58,7 +53,7 @@ proper_names_df = pd.read_excel('ProperNames.xlsx')  # Adjust file path as neede
 
 proper_names_list = proper_names_df['PROPER AUTHORIZED NAMES'].str.strip().tolist()  # Create a list of proper names
 
-translate_client = translate.Client()
+
 
 
 
@@ -83,6 +78,7 @@ def clean_digital_identifier(col):
             return x
         x = str(x).strip().lower()
         x = x.replace("ms0004", "Ms0004")  # Ensure the "Ms" is capitalized
+        x = x.replace("mS0004", "Ms0004")
         return x if x.endswith('.pdf') else f"{x}.pdf"
     
     return col.apply(clean_value)
@@ -105,14 +101,6 @@ def create_full_folder_file_path(digital_identifier_col):
     return digital_identifier_col.apply(format_path)
 
 
-
-
-def translate_text(text, target_language='es'):
-    if isinstance(text, str) and text.strip() != "":
-        # Translate the text using the Google API
-        translation = translate_client.translate(text, target_language=target_language)
-        return translation['translatedText']
-    return text  # Return original if no text to translate
 
 
 
@@ -156,18 +144,11 @@ def clean_title(col, language="Spanish"):
                     capitalized_words.append(word.lower())
             return " ".join(capitalized_words)
 
-        def translate_using_api(text):
-            # Use Google Translate to translate to Spanish (es) from English (en)
-            if language.lower() == 'spanish':
-                translation = translate_client.translate(text, target_language='es')
-                return translation['translatedText']
-            return text
+       
 
         # Apply capitalization
         x = capitalize_names(x)
-        # Use Google Translate for automatic translation
-        x = translate_using_api(x)
-
+      
         return x
 
     return col.apply(clean_value)
@@ -427,6 +408,39 @@ def fill_constant_values(df):
         'ACCESS_RIGHTS': {
             'ES': 'Abierto para la reutilización',
             'EN': 'Open for re-use'
+        },
+        'OA_NAME': {
+            'ES': '',
+            'EN': ''
+        },
+        'OA_DESCRIPTION': {
+            'ES': 'Esta colleción está disponible en inglés y español',
+            'EN': 'This collection is available in both, English and Spanish'
+        },
+        'OA_COLLECTION': {
+              '10317'
+            
+        },
+        'OA_PROFILE': {
+            'Documents'
+        },
+        'OA_STATUS': {
+            'PUBLISH'
+        },
+        'OA_LINK': {
+            ''
+        },
+        'OA_LOG': (
+            ''
+        ),
+        'OA_OBJECT_TYPE': {
+            'RECORD'
+        },
+        'OA_METADATA_SCHEMA': {
+            '4'
+        },
+        'OA_FEATURED': {
+            '0'
         }
     }
 
@@ -450,14 +464,20 @@ def clean_columns_in_sheets(xls, column_cleaning_rules):
         for column_name, cleaning_func in column_cleaning_rules.items():
             if column_name in df.columns:
                 print(f"Applying cleaning to column: {column_name}")
+            try:
                 
                 # If column is related to 'DATE', apply row-wise cleaning
                 if 'DATE' in column_name:
                     # Debugging: inspect what the cleaning function returns
-                    df[column_name] = df.apply(lambda row: debug_cleaning_func(row, cleaning_func), axis=1)
+                    date_col = column_name
+                    year_col = 'YEAR' if 'ES..' not in column_name else 'ES..YEAR'
+                    df[[date_col, year_col]] = df.apply(lambda row: pd.Series(cleaning_func(row, 'TITLE', date_col, year_col)), axis=1)
                 else:
                     # Apply column-wise cleaning
                     df[column_name] = df[column_name].apply(cleaning_func)
+        
+            except Exception as e: 
+                print(f"Error applying {cleaning_func.__name__} to {column_name}: {e}")
                     
         # Save cleaned DataFrame
         cleaned_sheets[sheet_name] = df
@@ -466,10 +486,6 @@ def debug_cleaning_func(row, cleaning_func):
     result = cleaning_func(row)
     print(f"Row: {row}, Result: {result}")  # Debug output
     return result
-
-
-
-
 
 
 
