@@ -3,13 +3,7 @@ import numpy as np
 import re
 import os
 import argparse
-import unicodedata 
-from google.cloud import translate_v2 as translate
-
-
-
-
-
+import unicodedata
 
 # Compiling regular expressions used throughout the script
 box_folder_regex = re.compile(r'[^\d_]')  # Regex to clean up BOX_FOLDER, allows only digits and underscores
@@ -22,45 +16,23 @@ parser = argparse.ArgumentParser(description="Process an Excel file")
 parser.add_argument("file_name", help="The name of the Excel file with extension (e.g., Test5.xlsx)")
 args = parser.parse_args()
 
-
-
-
 # Get the file name and create the file path
 file_name = args.file_name
 file_path = os.path.join(os.getcwd(), file_name)
-
-
-
-
 
 # Ensure the file exists in the directory
 if not os.path.exists(file_path):
     raise FileNotFoundError(f"The file {file_name} does not exist in the current directory.")
 
-
-
-
 # Load spreadsheet with multiple sheets
 xls = pd.ExcelFile(file_path)
-
-
-
-
 
 # Dictionary to hold cleaned DataFrames
 cleaned_sheets = {}
 
-
-
 # Load the known proper names from the Excel file
 proper_names_df = pd.read_excel('ProperNames.xlsx')  # Adjust file path as needed
-
-
 proper_names_list = proper_names_df['PROPER AUTHORIZED NAMES'].str.strip().tolist()  # Create a list of proper names
-
-translate_client = translate.Client()
-
-
 
 def ensure_series(col):
     """Ensures the input is a Pandas Series."""
@@ -72,10 +44,6 @@ def ensure_series(col):
         return pd.Series([col])
 
 # Define column-specific cleaning functions
-
-
-
-
 def clean_digital_identifier(col):
     col = ensure_series(col).astype(str).fillna('')  
     def clean_value(x):
@@ -86,10 +54,6 @@ def clean_digital_identifier(col):
         return x if x.endswith('.pdf') else f"{x}.pdf"
     
     return col.apply(clean_value)
-
-
-
-
 
 def create_full_folder_file_path(digital_identifier_col):
     digital_identifier_col = pd.Series(digital_identifier_col).fillna('').astype(str)
@@ -104,29 +68,12 @@ def create_full_folder_file_path(digital_identifier_col):
     
     return digital_identifier_col.apply(format_path)
 
-
-
-
-def translate_text(text, target_language='es'):
-    if isinstance(text, str) and text.strip() != "":
-        # Translate the text using the Google API
-        translation = translate_client.translate(text, target_language=target_language)
-        return translation['translatedText']
-    return text  # Return original if no text to translate
-
-
-
 def normalize_accents(text):
-    """
-    Normalize Spanish accents for proper display of words like 'invitación'
-    """
+    """Normalize Spanish accents for proper display of words like 'invitación'."""
     if isinstance(text, str):
         # Normalize and ensure correct encoding for Spanish words
         text = unicodedata.normalize('NFKC', text)
     return text
-
-
-
 
 def clean_title(col, language="Spanish"):
     col = ensure_series(col).astype(str).fillna('')  # Ensure it's a Pandas Series
@@ -156,17 +103,8 @@ def clean_title(col, language="Spanish"):
                     capitalized_words.append(word.lower())
             return " ".join(capitalized_words)
 
-        def translate_using_api(text):
-            # Use Google Translate to translate to Spanish (es) from English (en)
-            if language.lower() == 'spanish':
-                translation = translate_client.translate(text, target_language='es')
-                return translation['translatedText']
-            return text
-
         # Apply capitalization
         x = capitalize_names(x)
-        # Use Google Translate for automatic translation
-        x = translate_using_api(x)
 
         return x
 
@@ -265,44 +203,26 @@ from datetime import datetime
 
 def clean_dates(row, title_column, date_column, year_column):
     title = row[title_column]
+    date_str = ''
+    year_str = ''
+    
+    if isinstance(title, str):
+        # Match and extract date parts
+        date_pattern = r'(\b\w+\b) (\d{1,2}), (\d{4})'
+        match = re.search(date_pattern, title, re.IGNORECASE)
+        if match:
+            month, day, year = match.groups()
+            # Translate month and format date
+            month_mapping = {
+                'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
+                'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
+                'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
+            }
+            month_number = month_mapping.get(month.lower(), '01')
+            date_str = f'{year}-{month_number}-{day.zfill(2)}'
+            year_str = year
+    return date_str, year_str
 
-    # Ensure title is a string and handle None or NaN values
-    title_str = str(title) if title else ''
-
-    # Debugging: Output the type and value for each row's title
-    print(f"Row {row.name} - Title value: {title_str}")
-
-    # Pattern to match dates like "Marzo 7, 1924"
-    date_pattern = r'(\b\w+\b) (\d{1,2}), (\d{4})'
-    match = re.search(date_pattern, title_str, re.IGNORECASE)
-
-    if match:
-        month, day, year = match.groups()
-
-        # Map Spanish months to their English equivalents or month numbers
-        month_mapping = {
-            'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
-            'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
-            'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
-        }
-
-        # Convert month name to month number
-        month_number = month_mapping.get(month.lower(), '01')  # Default to January if not found
-
-        # Construct a formatted date string
-        formatted_date = f'{year}-{month_number}-{day.zfill(2)}'
-        row[date_column] = formatted_date
-        row[year_column] = year  # Store the year as well
-    elif 'sin fecha' in title_str.lower() or 'undated' in title_str.lower():
-        # Clear date and year for "sin fecha" or "undated"
-        row[date_column] = ''
-        row[year_column] = ''
-    else:
-        # No valid date found, clear both date and year
-        row[date_column] = ''
-        row[year_column] = ''
-
-    return row
 
 
 
@@ -431,19 +351,18 @@ def fill_constant_values(df):
     }
 
 
-
 def clean_columns_in_sheets(xls, column_cleaning_rules):
     for sheet_name in xls.sheet_names:
         df = pd.read_excel(xls, sheet_name=sheet_name)
         
-        # Ignore the GO_Technical metadata sheet
+        # Skip specific sheet
         if sheet_name == "GO_Technical metadata":
             print(f"Skipping sheet: {sheet_name}")
             continue
         
         print(f"Processing sheet: {sheet_name}")
         
-        # Fill any missing values with blanks and replace "no data" with blanks
+        # Fill missing values and replace "no data"
         df = df.fillna('').replace('no data', '')
         
         # Apply cleaning functions
@@ -451,25 +370,21 @@ def clean_columns_in_sheets(xls, column_cleaning_rules):
             if column_name in df.columns:
                 print(f"Applying cleaning to column: {column_name}")
                 
-                # If column is related to 'DATE', apply row-wise cleaning
                 if 'DATE' in column_name:
-                    # Debugging: inspect what the cleaning function returns
-                    df[column_name] = df.apply(lambda row: debug_cleaning_func(row, cleaning_func), axis=1)
+                    # For row-wise operations, iterate and assign each row's value
+                    df[[column_name, f"{column_name}_YEAR"]] = df.apply(lambda row: pd.Series(cleaning_func(row)), axis=1)
                 else:
-                    # Apply column-wise cleaning
+                    # For column-wise operations
                     df[column_name] = df[column_name].apply(cleaning_func)
                     
-        # Save cleaned DataFrame
+        # Save the cleaned DataFrame in a dictionary
         cleaned_sheets[sheet_name] = df
+
 
 def debug_cleaning_func(row, cleaning_func):
     result = cleaning_func(row)
     print(f"Row: {row}, Result: {result}")  # Debug output
     return result
-
-
-
-
 
 
 
