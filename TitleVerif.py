@@ -337,7 +337,7 @@ def fill_constant_values(df):
             'EN': 'Rio Grande Historical Collections'
         },
         'FORMAT': {
-            'ES': 'la applicación/pdf',
+            'ES': 'la aplicación/pdf',
             'EN': 'application/pdf'
         },
         'TYPE': {
@@ -347,8 +347,35 @@ def fill_constant_values(df):
         'ACCESS_RIGHTS': {
             'ES': 'Abierto para la reutilización',
             'EN': 'Open for re-use'
-        }
+        },
+        # Non-language specific constants
+        'OA_NAME': '',
+        'ES..OA_DESCRIPTION': 'Esta colección está disponible en inglés y español',
+        'OA_DESCRIPTION': 'This collection is available in both, English and Spanish',
+        'OA_COLLECTION': '10317',
+        'OA_PROFILE': 'Documents',
+        'OA_STATUS': 'PUBLISH',
+        'OA_LINK': '',
+        'OA_LOG': '',
+        'OA_OBJECT_TYPE': 'RECORD',
+        'OA_METADATA_SCHEMA': '4',
+        'OA_FEATURED': '0'
     }
+
+    # For each column, create or overwrite with the constant values
+    for column_name, value in constant_values.items():
+        # Determine the number of rows to fill
+        num_rows = len(df)
+        
+        if isinstance(value, dict):
+            # Handle language-specific columns
+            df[f'ES..{column_name}'] = pd.Series([value['ES']] * num_rows)
+            df[column_name] = pd.Series([value['EN']] * num_rows)
+        else:
+            # For single-value columns
+            df[column_name] = pd.Series([value] * num_rows)
+
+    return df
 
 
 def clean_columns_in_sheets(xls, column_cleaning_rules):
@@ -376,9 +403,13 @@ def clean_columns_in_sheets(xls, column_cleaning_rules):
                 else:
                     # For column-wise operations
                     df[column_name] = df[column_name].apply(cleaning_func)
+
+        # Fill constant values for specific columns
+        df = fill_constant_values(df)
                     
         # Save the cleaned DataFrame in a dictionary
         cleaned_sheets[sheet_name] = df
+
 
 
 def debug_cleaning_func(row, cleaning_func):
