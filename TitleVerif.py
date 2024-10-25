@@ -381,14 +381,17 @@ def fill_constant_values(df):
 def clean_columns_in_sheets(xls, column_cleaning_rules):
     for sheet_name in xls.sheet_names:
         df = pd.read_excel(xls, sheet_name=sheet_name)
-        
+
         # Skip specific sheet
         if sheet_name == "GO_Technical metadata":
             print(f"Skipping sheet: {sheet_name}")
             continue
-        
+
         print(f"Processing sheet: {sheet_name}")
         
+        # Store the original column order to preserve it later
+        original_columns = df.columns.tolist()
+
         # Fill missing values and replace "no data"
         df = df.fillna('').replace('no data', '')
         
@@ -403,6 +406,9 @@ def clean_columns_in_sheets(xls, column_cleaning_rules):
                 else:
                     # For column-wise operations
                     df[column_name] = df[column_name].apply(cleaning_func)
+
+        # Reorder the columns to match the original column order
+        df = df[original_columns]
 
         # Fill constant values for specific columns
         df = fill_constant_values(df)
