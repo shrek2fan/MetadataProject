@@ -27,20 +27,25 @@ def load_approved_subjects(vocabulary_file):
 
 
 
-# Load the city dataset into a dictionary structure
+# Load the city dataset into a dictionary structure with safe handling for non-string values
 def load_city_data(city_dataset_path):
     city_data = pd.read_excel(city_dataset_path)
+
+    def safe_strip(value):
+        # Only strip if value is a string; otherwise, return an empty string or the value as-is
+        return str(value).strip() if isinstance(value, str) else ''
+
     city_info = {}
     for _, row in city_data.iterrows():
-        city_info[(row['ES_City'].strip().lower(), 'spanish')] = {
-            'country': row['ES_Country'].strip(),
-            'state': row['ES_State'].strip(),
-            'coordinates': row["CITIES' LAT_LONG COORDINATES"].strip()
+        city_info[(safe_strip(row['ES_City']).lower(), 'spanish')] = {
+            'country': safe_strip(row['ES_Country']),
+            'state': safe_strip(row['ES_State']),
+            'coordinates': safe_strip(row["CITIES' LAT_LONG COORDINATES"])
         }
-        city_info[(row['EN_City'].strip().lower(), 'english')] = {
-            'country': row['EN_Country'].strip(),
-            'state': row['EN_State'].strip(),
-            'coordinates': row["CITIES' LAT_LONG COORDINATES"].strip()
+        city_info[(safe_strip(row['EN_City']).lower(), 'english')] = {
+            'country': safe_strip(row['EN_Country']),
+            'state': safe_strip(row['EN_State']),
+            'coordinates': safe_strip(row["CITIES' LAT_LONG COORDINATES"])
         }
     return city_info
 
@@ -65,10 +70,33 @@ def is_valid_year(value):
     return isinstance(value, int) and 1000 <= value <= 9999
 
 def is_valid_subject_lcsh(value, language="english"):
+    # Check if value is a string; if not, it's invalid
     if not isinstance(value, str):
-        return False
+        print(f"Failed SUBJECT_LCSH validation: Not a string")
+        return False, "Not a string"
+
+    # Check for whitespace issues
+    if value != value.strip():
+        print(f"Failed SUBJECT_LCSH validation: Whitespace found at start or end")
+        return False, "Whitespace at start or end"
+
+    # Split terms by the separator "[|]"
     terms = [term.strip() for term in value.split("[|]")]
-    return all(term in approved_subjects[language] for term in terms)
+
+    # Check for missing separator (only one term found means no separator)
+    if len(terms) < 2:
+        print(f"Failed SUBJECT_LCSH validation: Missing separator '[|]'")
+        return False, "Missing separator '[|]'"
+
+    # Check if all terms are present in the approved subjects vocabulary
+    missing_terms = [term for term in terms if term not in approved_subjects[language]]
+    if missing_terms:
+        print(f"Failed SUBJECT_LCSH validation: Terms not found in vocabulary: {missing_terms}")
+        return False, f"Terms not found in vocabulary: {', '.join(missing_terms)}"
+
+    # If all checks pass, the term is valid
+    return True, ""
+
 
 def check_name_format(value):
     if not isinstance(value, str):
@@ -139,19 +167,29 @@ def verify_file(input_file, output_file):
     df = pd.read_excel(input_file, sheet_name="OA_Descriptive metadata")
     
     for idx, row in df.iterrows():
-        # Apply general validation rules
+        # Apply general validation rules (non-location specific)
         for col_name, validation_func in column_validation_rules.items():
             if col_name in df.columns:
                 value = row[col_name]
                 try:
-                    if not validation_func(value):
-                        col_idx = df.columns.get_loc(col_name) + 1
-                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
-                        print(f"Failed validation: {col_name} at row {idx + 2}")
+                    # Run the validation function and capture detailed reasons if applicable
+                    if col_name.startswith("SUBJECT_LCSH"):  # SUBJECT_LCSH specific validation
+                        is_valid, reason = validation_func(value)
+                        if not is_valid:
+                            col_idx = df.columns.get_loc(col_name) + 1
+                            ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                            print(f"Failed validation: {col_name} at row {idx + 2}, value: '{value}' - Reason: {reason}")
+                    else:
+                        # General validation without detailed reason
+                        if not validation_func(value):
+                            col_idx = df.columns.get_loc(col_name) + 1
+                            ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                            print(f"Failed validation: {col_name} at row {idx + 2}, value: '{value}'")
+
                 except Exception as e:
                     print(f"Error in {col_name} at row {idx + 2}: {e}")
 
-        # Apply location-specific validation
+        # Apply location-specific validation only to location columns
         for col_name, location_func in location_validation_rules.items():
             if col_name in df.columns:
                 try:
@@ -159,11 +197,23 @@ def verify_file(input_file, output_file):
                         col_idx = df.columns.get_loc(col_name) + 1
                         ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
                         print(f"Failed location validation: {col_name} at row {idx + 2}")
+
+                        # Detailed failure reason for location validation
+                        city = row.get(col_name, '')
+                        country = row.get(col_name.replace("CITY", "COUNTRY"), '')
+                        state = row.get(col_name.replace("CITY", "STATE"), '')
+                        coordinates = row.get(col_name.replace("CITY", "GEOLOC_SCITY"), '')
+
+                        print(f"  - City: {city}, Country: {country}, State: {state}, Coordinates: {coordinates}")
+
                 except Exception as e:
                     print(f"Error in location validation for {col_name} at row {idx + 2}: {e}")
 
+    # Save the workbook with highlights
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
+
+
 
 # Argument parser to take file input and generate verified output
 if __name__ == "__main__":
