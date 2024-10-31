@@ -51,51 +51,126 @@ def load_city_data(city_dataset_path):
 
 # Define validation functions for each column
 def is_valid_digital_identifier(value):
-    return isinstance(value, str) and value.startswith("Ms0004") and value.endswith(".pdf")
+    """
+    Validates the digital identifier.
+
+    Returns:
+        Tuple[bool, str]: (True, "Valid") if the identifier is valid,
+                          (False, <Error message>) otherwise.
+    """
+    if not isinstance(value, str):
+        return False, "Digital Identifier is not a string"
+    if not value.startswith("Ms0004"):
+        return False, "Digital Identifier does not start with 'Ms0004'"
+    if not value.endswith(".pdf"):
+        return False, "Digital Identifier does not end with '.pdf'"
+    return True, "Valid"
 
 def is_valid_box_folder(value):
-    return isinstance(value, str) and bool(re.match(r'\d{2}_\d{2}', value))
+    """
+    Validates the box folder format.
+
+    Returns:
+        Tuple[bool, str]: (True, "Valid") if the format is correct,
+                          (False, <Error message>) otherwise.
+    """
+    if not isinstance(value, str):
+        return False, "Box Folder value is not a string"
+    if not re.match(r'^\d{2}_\d{2}$', value):
+        return False, "Box Folder format is incorrect, expected 'XX_XX' with two digits before and after the underscore"
+    return True, "Valid"
+
 
 def is_valid_collection_name(value, language="English"):
-    return value == ("Correspondencia de la familia Amador, 1856-1949" if language == "Spanish" else "Amador Family Correspondence, 1856-1949")
+    """
+    Validates the collection name based on the language.
+
+    Args:
+        value (str): The collection name to validate.
+        language (str): The language context ("English" or "Spanish").
+
+    Returns:
+        Tuple[bool, str]: (True, "Valid") if the name is correct,
+                          (False, <Error message>) otherwise.
+    """
+    if not isinstance(value, str):
+        return False, "Collection Name is not a string"
+    
+    expected_name = "Correspondencia de la familia Amador, 1856-1949" if language.lower() == "spanish" else "Amador Family Correspondence, 1856-1949"
+    if value != expected_name:
+        return False, f"Collection Name does not match expected value for {language}. Expected '{expected_name}' but got '{value}'"
+    
+    return True, "Valid"
+
+
 
 def is_valid_date(value):
+    """
+    Validates that the date is in either 'YYYY-MM-DD' or 'YYYY-MM' format.
+
+    Returns:
+        Tuple[bool, str]: (True, "Valid") if the date format is correct,
+                          (False, <Error message>) otherwise.
+    """
+    if pd.isna(value):
+        return True, "Valid (empty)"
+    
+    # Check for 'YYYY-MM-DD' format
     try:
         pd.to_datetime(value, format='%Y-%m-%d', errors='raise')
-        return True
+        return True, "Valid"
     except (ValueError, TypeError):
-        return False
+        pass
+    
+    # Check for 'YYYY-MM' format
+    try:
+        pd.to_datetime(value, format='%Y-%m', errors='raise')
+        return True, "Valid"
+    except (ValueError, TypeError):
+        return False, "Date format is invalid. Expected 'YYYY-MM-DD' or 'YYYY-MM'"
+
 
 def is_valid_year(value):
-    return isinstance(value, int) and 1000 <= value <= 9999
+    """
+    Validates the year.
+
+    Returns:
+        Tuple[bool, str]: (True, "Valid") if the year is correct,
+                          (False, <Error message>) otherwise.
+    """
+    if not isinstance(value, int):
+        return False, "Year is not an integer"
+    if not (1000 <= value <= 9999):
+        return False, "Year is out of valid range (1000-9999)"
+    return True, "Valid"
+
+
 
 def is_valid_subject_lcsh(value, language="english"):
-    # Check if value is a string; if not, it's invalid
+    """
+    Validates the SUBJECT_LCSH field against the approved vocabulary.
+
+    Args:
+        value (str): The subject terms to validate.
+        language (str): The language of the terms ("english" or "spanish").
+
+    Returns:
+        Tuple[bool, str]: (True, "Valid") if all terms are in the vocabulary,
+                          (False, <Error message>) otherwise.
+    """
     if not isinstance(value, str):
-        print(f"Failed SUBJECT_LCSH validation: Not a string")
-        return False, "Not a string"
-
-    # Check for whitespace issues
-    if value != value.strip():
-        print(f"Failed SUBJECT_LCSH validation: Whitespace found at start or end")
-        return False, "Whitespace at start or end"
-
-    # Split terms by the separator "[|]"
+        return False, "Subject LCSH is not a string"
+    
     terms = [term.strip() for term in value.split("[|]")]
-
-    # Check for missing separator (only one term found means no separator)
-    if len(terms) < 2:
-        print(f"Failed SUBJECT_LCSH validation: Missing separator '[|]'")
-        return False, "Missing separator '[|]'"
-
-    # Check if all terms are present in the approved subjects vocabulary
     missing_terms = [term for term in terms if term not in approved_subjects[language]]
+    
     if missing_terms:
-        print(f"Failed SUBJECT_LCSH validation: Terms not found in vocabulary: {missing_terms}")
-        return False, f"Terms not found in vocabulary: {', '.join(missing_terms)}"
+        return False, f"Terms not found in vocabulary: {missing_terms}"
+    
+    return True, "Valid"
 
-    # If all checks pass, the term is valid
-    return True, ""
+
+
 
 
 def check_name_format(value):
@@ -105,23 +180,55 @@ def check_name_format(value):
     return "valid" if stripped_name in authorized_names else "missing"
 
 def is_valid_city_related(row, city_column, country_column, state_column, coord_column, language):
+    # Get city, country, state, and coordinates, handling NaNs
     city = str(row.get(city_column, '')).strip().lower() if pd.notna(row.get(city_column)) else ''
-    if not city or city == "no data":
-        return True  # Skips validation if city is missing or set to 'no data'
+    country = row.get(country_column, '').strip() if pd.notna(row.get(country_column)) else ''
+    state = row.get(state_column, '').strip() if pd.notna(row.get(state_column)) else ''
+    coordinates = row.get(coord_column, '').strip() if pd.notna(row.get(coord_column)) else ''
     
+    # Skip validation if city is empty or "no data"
+    if not city or city == "no data":
+        return True, "City data missing or marked as 'no data'"
+
     # Retrieve expected data for the city
     city_key = (city, language)
     expected_data = city_info.get(city_key)
     
+    # City not found in dataset
     if not expected_data:
-        return False  # City not in dataset
-    
-    # Coordinate and location checks
-    valid_country = row[country_column].strip() == expected_data['country'] if pd.notna(row.get(country_column)) else True
-    valid_state = row[state_column].strip() == expected_data['state'] if pd.notna(row.get(state_column)) else True
-    valid_coords = row[coord_column].strip() == expected_data['coordinates'] if pd.notna(row.get(coord_column)) else True
-    
-    return valid_country and valid_state and valid_coords
+        return False, f"City '{city}' not found in dataset for language '{language}'"
+
+    # Country and State Validation
+    valid_country = country == expected_data['country'] if country else True
+    valid_state = state == expected_data['state'] if state else True
+
+    # Detailed logging for country/state mismatches
+    if not valid_country:
+        return False, f"Country mismatch: Expected '{expected_data['country']}', found '{country}'"
+    if not valid_state:
+        return False, f"State mismatch: Expected '{expected_data['state']}', found '{state}'"
+
+    # Coordinate Validation
+    expected_coords = expected_data['coordinates']
+    coord_sets = coordinates.split("[|]")
+
+    # Ensure 1 or 2 coordinate sets exist and match format
+    if len(coord_sets) > 2:
+        return False, "Coordinate format error: More than two coordinate sets found. Both GEOLOC_SCITY columns should be highlighted."
+
+    # Check if coordinates match exactly as expected, in the correct format
+    for i, actual_coords in enumerate(coord_sets):
+        if actual_coords.strip() != expected_coords:
+            return False, f"Coordinate set {i + 1} does not match expected value '{expected_coords}'. Highlight GEOLOC_SCITY columns."
+
+    # If the cell contains two sets of coordinates, ensure the correct separator is present
+    if len(coord_sets) == 2 and coordinates != f"{coord_sets[0].strip()}[|]{coord_sets[1].strip()}":
+        return False, "Coordinate format error: Missing or incorrect '[|]' separator for dual coordinates. Highlight GEOLOC_SCITY columns."
+
+    return True, "Location data matches expected values"
+
+
+
 
 
 def load_authorized_names(names_dataset_path):
@@ -162,56 +269,63 @@ authorized_names = load_authorized_names("CVPeople.xlsx")
 
 
 def verify_file(input_file, output_file):
+    # Load the existing workbook to modify in place
     wb = load_workbook(input_file)
     ws = wb["OA_Descriptive metadata"]
+
+    # Load the data as a DataFrame for processing
     df = pd.read_excel(input_file, sheet_name="OA_Descriptive metadata")
     
+    # Iterate through each row and validate each column
     for idx, row in df.iterrows():
-        # Apply general validation rules (non-location specific)
+        row_passed = True  # Tracks if the row passed all validations
+
+        # Validate general non-fill-down columns
         for col_name, validation_func in column_validation_rules.items():
             if col_name in df.columns:
                 value = row[col_name]
                 try:
-                    # Run the validation function and capture detailed reasons if applicable
-                    if col_name.startswith("SUBJECT_LCSH"):  # SUBJECT_LCSH specific validation
-                        is_valid, reason = validation_func(value)
-                        if not is_valid:
-                            col_idx = df.columns.get_loc(col_name) + 1
-                            ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
-                            print(f"Failed validation: {col_name} at row {idx + 2}, value: '{value}' - Reason: {reason}")
+                    # Perform validation and capture result
+                    is_valid, reason = validation_func(value) if callable(validation_func) else (True, "No validation needed")
+
+                    if is_valid:
+                        print(f"Validation successful: {col_name} at row {idx + 2}")
                     else:
-                        # General validation without detailed reason
-                        if not validation_func(value):
-                            col_idx = df.columns.get_loc(col_name) + 1
-                            ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
-                            print(f"Failed validation: {col_name} at row {idx + 2}, value: '{value}'")
-
+                        row_passed = False
+                        # Highlight failed cell and log reason for failure
+                        col_idx = df.columns.get_loc(col_name) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col_name} at row {idx + 2} - Reason: {reason}")
                 except Exception as e:
-                    print(f"Error in {col_name} at row {idx + 2}: {e}")
-
-        # Apply location-specific validation only to location columns
+                    row_passed = False
+                    print(f"Error validating {col_name} at row {idx + 2}: {e}")
+        
+        # Validate location-specific columns separately for better context
         for col_name, location_func in location_validation_rules.items():
             if col_name in df.columns:
                 try:
-                    if not location_func(row):
+                    is_valid, reason = location_func(row)
+                    
+                    if is_valid:
+                        print(f"Location validation successful: {col_name} at row {idx + 2}")
+                    else:
+                        row_passed = False
                         col_idx = df.columns.get_loc(col_name) + 1
                         ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
-                        print(f"Failed location validation: {col_name} at row {idx + 2}")
-
-                        # Detailed failure reason for location validation
-                        city = row.get(col_name, '')
-                        country = row.get(col_name.replace("CITY", "COUNTRY"), '')
-                        state = row.get(col_name.replace("CITY", "STATE"), '')
-                        coordinates = row.get(col_name.replace("CITY", "GEOLOC_SCITY"), '')
-
-                        print(f"  - City: {city}, Country: {country}, State: {state}, Coordinates: {coordinates}")
-
+                        print(f"Failed location validation: {col_name} at row {idx + 2} - Reason: {reason}")
                 except Exception as e:
+                    row_passed = False
                     print(f"Error in location validation for {col_name} at row {idx + 2}: {e}")
 
-    # Save the workbook with highlights
+        # Report row success if all validations were successful
+        if row_passed:
+            print(f"Row {idx + 2} validation passed successfully.")
+
+    # Save the workbook with highlighted errors
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
+
+
 
 
 
