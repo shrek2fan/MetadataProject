@@ -10,9 +10,6 @@ highlight_fill_red = PatternFill(start_color="FF0000", end_color="FF0000", fill_
 highlight_fill_yellow = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 
 
-
-
-
 # Load the approved SUBJECT_LCSH vocabulary with separate English and Spanish terms
 def load_approved_subjects(vocabulary_file):
     approved_df = pd.read_excel(vocabulary_file)
@@ -51,20 +48,12 @@ def load_city_data(city_dataset_path):
 
 # Define validation functions for each column
 def is_valid_digital_identifier(value):
-    """
-    Validates the digital identifier.
-
-    Returns:
-        Tuple[bool, str]: (True, "Valid") if the identifier is valid,
-                          (False, <Error message>) otherwise.
-    """
     if not isinstance(value, str):
-        return False, "Digital Identifier is not a string"
-    if not value.startswith("Ms0004"):
-        return False, "Digital Identifier does not start with 'Ms0004'"
-    if not value.endswith(".pdf"):
-        return False, "Digital Identifier does not end with '.pdf'"
+        return False, "Value is not a string"
+    if not value.startswith("Ms0004") or not value.endswith(".pdf"):
+        return False, "Identifier does not follow expected format"
     return True, "Valid"
+
 
 def is_valid_box_folder(value):
     """
@@ -147,30 +136,23 @@ def is_valid_year(value):
 
 
 def is_valid_subject_lcsh(value, language="english"):
-    """
-    Validates the SUBJECT_LCSH field against the approved vocabulary.
-
-    Args:
-        value (str): The subject terms to validate.
-        language (str): The language of the terms ("english" or "spanish").
-
-    Returns:
-        Tuple[bool, str]: (True, "Valid") if all terms are in the vocabulary,
-                          (False, <Error message>) otherwise.
-    """
     if not isinstance(value, str):
-        return False, "Subject LCSH is not a string"
-    
+        return False, "Invalid type: Expected a string"
+
+    # Split terms based on separator and strip any extra whitespace from each term
     terms = [term.strip() for term in value.split("[|]")]
-    missing_terms = [term for term in terms if term not in approved_subjects[language]]
     
-    if missing_terms:
-        return False, f"Terms not found in vocabulary: {missing_terms}"
-    
-    return True, "Valid"
+    # Check for any whitespace issues between terms and separators
+    if "[|]" in value and " " in value:
+        return False, "Whitespace found around separator or terms"
 
+    # Verify each term exists in the vocabulary set for the specified language
+    invalid_terms = [term for term in terms if term not in approved_subjects[language]]
+    if invalid_terms:
+        return False, f"Terms not found in vocabulary: {invalid_terms}"
 
-
+    # If all terms are valid, return True
+    return True, "Valid subject terms"
 
 
 def check_name_format(value):
@@ -228,9 +210,6 @@ def is_valid_city_related(row, city_column, country_column, state_column, coord_
     return True, "Location data matches expected values"
 
 
-
-
-
 def load_authorized_names(names_dataset_path):
     names_data = pd.read_excel(names_dataset_path, usecols=[0])
     return set(names_data['PEOPLE'].dropna().str.strip())
@@ -269,63 +248,42 @@ authorized_names = load_authorized_names("CVPeople.xlsx")
 
 
 def verify_file(input_file, output_file):
-    # Load the existing workbook to modify in place
     wb = load_workbook(input_file)
     ws = wb["OA_Descriptive metadata"]
-
-    # Load the data as a DataFrame for processing
     df = pd.read_excel(input_file, sheet_name="OA_Descriptive metadata")
     
-    # Iterate through each row and validate each column
     for idx, row in df.iterrows():
-        row_passed = True  # Tracks if the row passed all validations
-
-        # Validate general non-fill-down columns
+        # Apply general validation rules
         for col_name, validation_func in column_validation_rules.items():
             if col_name in df.columns:
                 value = row[col_name]
                 try:
-                    # Perform validation and capture result
-                    is_valid, reason = validation_func(value) if callable(validation_func) else (True, "No validation needed")
-
-                    if is_valid:
-                        print(f"Validation successful: {col_name} at row {idx + 2}")
-                    else:
-                        row_passed = False
-                        # Highlight failed cell and log reason for failure
+                    is_valid, message = validation_func(value)  # Unpacking the result
+                    if not is_valid:
                         col_idx = df.columns.get_loc(col_name) + 1
                         ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
-                        print(f"Failed validation: {col_name} at row {idx + 2} - Reason: {reason}")
+                        print(f"Failed validation: {col_name} at row {idx + 2} - Reason: {message}")
+                    else:
+                        print(f"Validation successful: {col_name} at row {idx + 2}")
                 except Exception as e:
-                    row_passed = False
                     print(f"Error validating {col_name} at row {idx + 2}: {e}")
-        
-        # Validate location-specific columns separately for better context
+
+        # Apply location-specific validation
         for col_name, location_func in location_validation_rules.items():
             if col_name in df.columns:
                 try:
-                    is_valid, reason = location_func(row)
-                    
-                    if is_valid:
-                        print(f"Location validation successful: {col_name} at row {idx + 2}")
-                    else:
-                        row_passed = False
+                    is_valid, message = location_func(row)  # Unpacking the result
+                    if not is_valid:
                         col_idx = df.columns.get_loc(col_name) + 1
                         ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
-                        print(f"Failed location validation: {col_name} at row {idx + 2} - Reason: {reason}")
+                        print(f"Failed location validation: {col_name} at row {idx + 2} - Reason: {message}")
+                    else:
+                        print(f"Location validation successful: {col_name} at row {idx + 2}")
                 except Exception as e:
-                    row_passed = False
                     print(f"Error in location validation for {col_name} at row {idx + 2}: {e}")
 
-        # Report row success if all validations were successful
-        if row_passed:
-            print(f"Row {idx + 2} validation passed successfully.")
-
-    # Save the workbook with highlighted errors
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
-
-
 
 
 
