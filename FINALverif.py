@@ -135,6 +135,39 @@ def is_valid_year(value):
 
 
 
+def validate_name_field(value, authorized_names):
+    """
+    Validates the FROM and TO fields (in both English and Spanish) by checking if the exact
+    value exists in the CVPeople dataset's authorized names set.
+
+    Args:
+        value (str): Name to validate, assumed to be in the correct format.
+        authorized_names (set): Set of authorized names from the CVPeople dataset.
+
+    Returns:
+        (bool, str): Tuple where True indicates a valid name, False indicates invalid.
+                     String provides the reason for failure.
+    """
+    # Define known "unknown" values that are always valid
+    known_unknown_values = {
+        "Unknown sender", "Remitente desconocido",
+        "Unknown recipient", "Destinatario desconocido"
+    }
+
+    # If the value is a known "unknown" term, it’s valid
+    if value in known_unknown_values:
+        return True, "Valid (unknown value)"
+
+    # Direct exact match with the authorized names set
+    if value in authorized_names:
+        return True, "Valid"
+
+    # If there's no match, return "Not authorized" indicating the name isn't found
+    return False, "Not authorized: Name not found in dataset"
+
+
+
+
 def is_valid_subject_lcsh(value, language="english"):
     if not isinstance(value, str):
         return False, "Invalid type: Expected a string"
@@ -211,8 +244,12 @@ def is_valid_city_related(row, city_column, country_column, state_column, coord_
 
 
 def load_authorized_names(names_dataset_path):
-    names_data = pd.read_excel(names_dataset_path, usecols=[0])
-    return set(names_data['PEOPLE'].dropna().str.strip())
+    names_data = pd.read_excel(names_dataset_path, usecols=[0])  # Load only Column A
+    authorized_names = set(names_data.iloc[:, 0].dropna().str.strip())  # Convert to a set of strings
+    # Display a sample of extracted data for verification
+    authorized_names_list = list(authorized_names)[:20]  # Display the first 20 entries for review
+    authorized_names_list
+  
 
 # Column validation rules
 column_validation_rules = {
@@ -228,10 +265,10 @@ column_validation_rules = {
     "ES..YEAR": is_valid_year,
     "SUBJECT_LCSH": lambda x: is_valid_subject_lcsh(x, language="english"),
     "ES..SUBJECT_LCSH": lambda x: is_valid_subject_lcsh(x, language="spanish"),
-    "FROM": check_name_format,
-    "ES..FROM": check_name_format,
-    "TO": check_name_format,
-    "ES..TO": check_name_format
+    "FROM": lambda x: validate_name_field(x, "FROM"),
+    "ES..FROM": lambda x: validate_name_field(x, "ES..FROM"),
+    "TO": lambda x: validate_name_field(x, "TO"),
+    "ES..TO": lambda x: validate_name_field(x, "ES..TO"),
 }
 
 location_validation_rules = {
@@ -245,45 +282,46 @@ location_validation_rules = {
 approved_subjects = load_approved_subjects("SUBJECT_LCSH.xlsx")
 city_info = load_city_data("Maybeee.xlsx")
 authorized_names = load_authorized_names("CVPeople.xlsx")
+# Temporary check to verify the loaded names are correct
+print("Loaded authorized names:", authorized_names)
 
 
 def verify_file(input_file, output_file):
     wb = load_workbook(input_file)
     ws = wb["OA_Descriptive metadata"]
     df = pd.read_excel(input_file, sheet_name="OA_Descriptive metadata")
-    
+
     for idx, row in df.iterrows():
-        # Apply general validation rules
         for col_name, validation_func in column_validation_rules.items():
             if col_name in df.columns:
                 value = row[col_name]
                 try:
-                    is_valid, message = validation_func(value)  # Unpacking the result
-                    if not is_valid:
+                    is_valid, message = validation_func(value)
+                    if is_valid:
+                        print(f"Validation successful: {col_name} at row {idx + 2}")
+                    else:
                         col_idx = df.columns.get_loc(col_name) + 1
                         ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
                         print(f"Failed validation: {col_name} at row {idx + 2} - Reason: {message}")
-                    else:
-                        print(f"Validation successful: {col_name} at row {idx + 2}")
                 except Exception as e:
                     print(f"Error validating {col_name} at row {idx + 2}: {e}")
 
-        # Apply location-specific validation
         for col_name, location_func in location_validation_rules.items():
             if col_name in df.columns:
                 try:
-                    is_valid, message = location_func(row)  # Unpacking the result
-                    if not is_valid:
+                    is_valid, message = location_func(row)
+                    if is_valid:
+                        print(f"Location validation successful: {col_name} at row {idx + 2}")
+                    else:
                         col_idx = df.columns.get_loc(col_name) + 1
                         ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
                         print(f"Failed location validation: {col_name} at row {idx + 2} - Reason: {message}")
-                    else:
-                        print(f"Location validation successful: {col_name} at row {idx + 2}")
                 except Exception as e:
                     print(f"Error in location validation for {col_name} at row {idx + 2}: {e}")
 
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
+
 
 
 
