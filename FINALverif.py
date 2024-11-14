@@ -43,59 +43,42 @@ def load_city_data(city_dataset_path):
 
 
 def is_valid_city_related(row, city_column, country_column, state_column, coord_column, language):
-    """
-    Validates the city, country, state, and coordinates data, ensuring the coordinates match
-    the expected values for the given city in the specified language.
-
-    Parameters:
-    - row (pd.Series): The row of data being validated.
-    - city_column (str): Column name for the city.
-    - country_column (str): Column name for the country.
-    - state_column (str): Column name for the state.
-    - coord_column (str): Column name for the coordinates.
-    - language (str): Language ('english' or 'spanish') to select the appropriate city data.
-
-    Returns:
-    - (bool, str, str): Tuple indicating if validation passed, the color for highlighting ('red' or 'yellow'), 
-      and an error message.
-    """
     city = str(row.get(city_column, '')).strip().lower() if pd.notna(row.get(city_column)) else ''
     country = row.get(country_column, '').strip() if pd.notna(row.get(country_column)) else ''
     state = row.get(state_column, '').strip() if pd.notna(row.get(state_column)) else ''
     coordinates = row.get(coord_column, '').strip() if pd.notna(row.get(coord_column)) else ''
 
-    # Debug: Log retrieved values for confirmation
     print(f"Debug: Validating city '{city}', country '{country}', state '{state}', coordinates '{coordinates}'")
 
     if not city or city == "no data":
-        return True, "", "City data missing or marked as 'no data'"
+        return True, "", "", "City data missing or marked as 'no data'"
 
     city_key = (city, language)
     expected_data = city_info.get(city_key)
 
     if not expected_data:
-        return False, "yellow", f"City '{city}' not found in dataset for language '{language}'"
+        return False, "yellow", city_column, f"City '{city}' not found in dataset for language '{language}'"
 
     if country and country != expected_data['country']:
-        return False, "red", f"Country mismatch: Expected '{expected_data['country']}', found '{country}'"
+        return False, "red", country_column, f"Country mismatch: Expected '{expected_data['country']}', found '{country}'"
     
     if state and state != expected_data['state']:
-        return False, "red", f"State mismatch: Expected '{expected_data['state']}', found '{state}'"
+        return False, "red", state_column, f"State mismatch: Expected '{expected_data['state']}', found '{state}'"
 
     expected_coords = expected_data['coordinates']
     coord_sets = coordinates.split("[|]")
 
-    # Validate each set of coordinates for match
     matched_coords = [actual_coords.strip() for actual_coords in coord_sets if actual_coords.strip() == expected_coords]
 
     if not matched_coords:
-        return False, "red", f"No matching coordinates found for '{city}' with expected value '{expected_coords}'"
+        return False, "red", coord_column, f"No matching coordinates found for '{city}' with expected value '{expected_coords}'"
 
     if len(coord_sets) == 2 and coordinates != f"{coord_sets[0].strip()}[|]{coord_sets[1].strip()}":
-        return False, "red", "Coordinate format error: Incorrect '[|]' separator for dual coordinates."
+        return False, "red", coord_column, "Coordinate format error: Incorrect '[|]' separator for dual coordinates."
 
     print("Debug: Location data matches expected values; validation passed.")
-    return True, "", "Location data matches expected values"
+    return True, "", "", "Location data matches expected values"
+
 
 
 
@@ -358,29 +341,28 @@ def verify_file(input_file, output_file):
                             print(f"Failed validation: {col_name} at row {idx + 2} - Reason: {message}")
                 except Exception as e:
                     print(f"Error validating {col_name} at row {idx + 2}: {e}")
+                
+                # Validate location-related columns
+                for loc_col_name, location_func in location_validation_rules.items():
+                    if loc_col_name in df.columns:
+                        try:
+                            is_valid, color, highlight_col, message = location_func(row)
+                            if is_valid:
+                                print(f"Location validation successful: {loc_col_name} at row {idx + 2}")
+                            else:
+                                # Highlight the specific failing column
+                                col_idx = df.columns.get_loc(highlight_col) + 1
+                                ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                                print(f"Failed location validation: {loc_col_name} at row {idx + 2} - Reason: {message}")
+                        except Exception as e:
+                            print(f"Error in location validation for {loc_col_name} at row {idx + 2}: {e}")
 
-        # Validate location-related columns
-        for loc_col_name, location_func in location_validation_rules.items():
-            if loc_col_name in df.columns:
-                try:
-                    # Run location validation
-                    is_valid, highlight_col, message = location_func(row)
-                    if is_valid:
-                        print(f"Location validation successful: {loc_col_name} at row {idx + 2}")
-                    else:
-                        # Locate the exact column to highlight for location-related errors
-                        col_idx = df.columns.get_loc(highlight_col) + 1
-                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if highlight_col == "red" else highlight_fill_yellow
-                        print(f"Failed location validation: {loc_col_name} at row {idx + 2} - Reason: {message}")
-                except Exception as e:
-                    print(f"Error in location validation for {loc_col_name} at row {idx + 2}: {e}")
+
+       
 
     # Save the workbook after validation and highlighting
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
-
-
-
 
 
 
