@@ -56,53 +56,47 @@ def is_valid_city_related(row, city_column, country_column, state_column, coord_
     - language (str): Language ('english' or 'spanish') to select the appropriate city data.
 
     Returns:
-    - (bool, str, str): Tuple indicating if validation passed, the column to highlight if not,
+    - (bool, str, str): Tuple indicating if validation passed, the color for highlighting ('red' or 'yellow'), 
       and an error message.
     """
-    # Retrieve and clean city, country, state, and coordinates
     city = str(row.get(city_column, '')).strip().lower() if pd.notna(row.get(city_column)) else ''
     country = row.get(country_column, '').strip() if pd.notna(row.get(country_column)) else ''
     state = row.get(state_column, '').strip() if pd.notna(row.get(state_column)) else ''
     coordinates = row.get(coord_column, '').strip() if pd.notna(row.get(coord_column)) else ''
 
-    # Skip validation if city is empty or marked as "no data"
+    # Debug: Log retrieved values for confirmation
+    print(f"Debug: Validating city '{city}', country '{country}', state '{state}', coordinates '{coordinates}'")
+
     if not city or city == "no data":
         return True, "", "City data missing or marked as 'no data'"
 
-    # Fetch expected data for the city from city_info dictionary
     city_key = (city, language)
     expected_data = city_info.get(city_key)
 
-    # If city is not in the dataset, highlight in yellow
     if not expected_data:
         return False, "yellow", f"City '{city}' not found in dataset for language '{language}'"
 
-    # Validate country and state if provided
     if country and country != expected_data['country']:
         return False, "red", f"Country mismatch: Expected '{expected_data['country']}', found '{country}'"
     
     if state and state != expected_data['state']:
         return False, "red", f"State mismatch: Expected '{expected_data['state']}', found '{state}'"
 
-    # Validate coordinates
     expected_coords = expected_data['coordinates']
     coord_sets = coordinates.split("[|]")
 
-    # Ensure coordinate format is correct
-    if len(coord_sets) > 2:
-        return False, "red", "Coordinate format error: More than two coordinate sets found."
-
-    # Check that at least one of the sets matches expected coordinates for each city
+    # Validate each set of coordinates for match
     matched_coords = [actual_coords.strip() for actual_coords in coord_sets if actual_coords.strip() == expected_coords]
 
     if not matched_coords:
-        return False, "red", f"No matching coordinates found for '{city}' with expected value '{expected_coords}'."
+        return False, "red", f"No matching coordinates found for '{city}' with expected value '{expected_coords}'"
 
-    # If dual coordinates are provided, ensure correct separator format
     if len(coord_sets) == 2 and coordinates != f"{coord_sets[0].strip()}[|]{coord_sets[1].strip()}":
         return False, "red", "Coordinate format error: Incorrect '[|]' separator for dual coordinates."
 
+    print("Debug: Location data matches expected values; validation passed.")
     return True, "", "Location data matches expected values"
+
 
 
 # Adjust location validation rules to include the language parameter
@@ -121,14 +115,14 @@ def validate_digital_identifier(value, previous_identifier=None):
     Validate the DIGITAL_IDENTIFIER format for either 'Ms0004_XX_XX_XX.pdf' or 'Ms0071_XX_XX_XX.pdf' pattern.
     The format must follow 'Ms0004_<BoxNumber>_<FolderNumber>_<LetterNumber>.pdf' or 'Ms0071_<BoxNumber>_<FolderNumber>_<LetterNumber>.pdf'.
     The BoxNumber and FolderNumber should remain consistent in sequence, and
-    LetterNumber should increment by 1 from the previous row's LetterNumber.
+    LetterNumber should increment by 1 starting from '01' at row 2.
 
     Parameters:
     - value (str): The identifier to validate.
-    - previous_identifier (tuple): The box, folder, and letter numbers of the previous identifier.
+    - previous_identifier (tuple): The collection, box, folder, and letter numbers of the previous identifier.
 
     Returns:
-    - (bool, str, str): Validation status, fill color ('red' or 'yellow'), and message.
+    - (bool, tuple, str): Validation status, updated identifier, and message.
     """
     if not isinstance(value, str):
         return False, "red", "Invalid type: Expected a string"
@@ -138,29 +132,34 @@ def validate_digital_identifier(value, previous_identifier=None):
     if not match:
         return False, "red", "Incorrect format. Expected 'Ms0004_XX_XX_XX.pdf' or 'Ms0071_XX_XX_XX.pdf' where XX are two-digit numbers"
 
-    # Extract BoxNumber, FolderNumber, and LetterNumber
-    _, box_number, folder_number, letter_number = match.groups()
+    # Extract Collection, BoxNumber, FolderNumber, and LetterNumber
+    collection, box_number, folder_number, letter_number = match.groups()
 
-    # Check if this is the first identifier in the series
+    # Convert letter_number to an integer for comparison
+    current_letter_number = int(letter_number)
+
+    # Check if this is the first identifier in the series (should be 01 at row 2)
     if previous_identifier is None:
-        # Initialize tracking with the first identifier's box and folder number, starting with LetterNumber = 01
-        if letter_number != "01":
+        if current_letter_number != 1:
             return False, "red", "First letter number must start with 01"
-        return True, (box_number, folder_number, int(letter_number)), "Valid"
+        # Set initial tracking for the next row to increment from here
+        return True, (collection, box_number, folder_number, current_letter_number), "Valid"
 
     # Unpack previous identifier
-    prev_box, prev_folder, prev_letter = previous_identifier
+    prev_collection, prev_box, prev_folder, prev_letter = previous_identifier
 
-    # Verify that BoxNumber and FolderNumber match the previous identifier's values
-    if box_number != prev_box or folder_number != prev_folder:
-        return False, "red", f"Box or folder number mismatch. Expected '{prev_box}_{prev_folder}'"
+    # Verify that Collection, BoxNumber, and FolderNumber match the previous identifier's values
+    if collection != prev_collection or box_number != prev_box or folder_number != prev_folder:
+        return False, "red", f"Box or folder number mismatch. Expected '{prev_box}_{prev_folder}' but got '{box_number}_{folder_number}'"
 
-    # Ensure LetterNumber increments by 1
-    if int(letter_number) != prev_letter + 1:
-        return False, "red", f"Letter number must increment sequentially. Expected {str(prev_letter + 1).zfill(2)}"
+    # Calculate the next expected letter number, which should simply be previous letter + 1
+    expected_letter_number = prev_letter + 1
+    if current_letter_number != expected_letter_number:
+        return False, "red", f"Letter number must increment sequentially. Expected {str(expected_letter_number).zfill(2)} but got {letter_number}"
 
     # If all checks pass, update previous identifier tracking and mark as valid
-    return True, (box_number, folder_number, int(letter_number)), "Valid"
+    return True, (collection, box_number, folder_number, current_letter_number), "Valid"
+
 
 
 def is_valid_box_folder(value):
@@ -311,11 +310,14 @@ print("Loaded authorized names:", authorized_names)
 
 
 def verify_file(input_file, output_file):
+    # Load the Excel file and worksheet
     wb = load_workbook(input_file)
     ws = wb["OA_Descriptive metadata"]
     df = pd.read_excel(input_file, sheet_name="OA_Descriptive metadata")
 
-    previous_identifier = None  # Initialize for tracking previous DIGITAL_IDENTIFIER
+    # Initialize previous identifiers separately for each column
+    previous_identifier_digital = None  # For DIGITAL_IDENTIFIER column
+    previous_identifier_es_digital = None  # For ES..DIGITAL_IDENTIFIER column
 
     for idx, row in df.iterrows():
         # Validate non-location columns
@@ -324,16 +326,29 @@ def verify_file(input_file, output_file):
                 value = row[col_name]
                 try:
                     # Special handling for DIGITAL_IDENTIFIER to track sequence
-                    if col_name in ["DIGITAL_IDENTIFIER", "ES..DIGITAL_IDENTIFIER"]:
-                        is_valid, result, message = validate_digital_identifier(value, previous_identifier)
+                    if col_name == "DIGITAL_IDENTIFIER":
+                        is_valid, result, message = validate_digital_identifier(value, previous_identifier_digital)
                         if is_valid:
-                            previous_identifier = result  # Update previous_identifier for next iteration
+                            previous_identifier_digital = result  # Update tracking for next row
+                            print(f"Validation successful: {col_name} at row {idx + 2}")
+                        else:
+                            # Apply the correct color highlight based on the validation result
+                            col_idx = df.columns.get_loc(col_name) + 1
+                            ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if result == "red" else highlight_fill_yellow
+                            print(f"Failed validation: {col_name} at row {idx + 2} - Reason: {message}")
+                    
+                    elif col_name == "ES..DIGITAL_IDENTIFIER":
+                        is_valid, result, message = validate_digital_identifier(value, previous_identifier_es_digital)
+                        if is_valid:
+                            previous_identifier_es_digital = result  # Update tracking for next row
                             print(f"Validation successful: {col_name} at row {idx + 2}")
                         else:
                             col_idx = df.columns.get_loc(col_name) + 1
                             ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if result == "red" else highlight_fill_yellow
                             print(f"Failed validation: {col_name} at row {idx + 2} - Reason: {message}")
+
                     else:
+                        # General validation for non-DIGITAL_IDENTIFIER columns
                         is_valid, color, message = validation_func(value)
                         if is_valid:
                             print(f"Validation successful: {col_name} at row {idx + 2}")
@@ -348,18 +363,22 @@ def verify_file(input_file, output_file):
         for loc_col_name, location_func in location_validation_rules.items():
             if loc_col_name in df.columns:
                 try:
+                    # Run location validation
                     is_valid, highlight_col, message = location_func(row)
                     if is_valid:
                         print(f"Location validation successful: {loc_col_name} at row {idx + 2}")
                     else:
+                        # Locate the exact column to highlight for location-related errors
                         col_idx = df.columns.get_loc(highlight_col) + 1
-                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if highlight_col == "red" else highlight_fill_yellow
                         print(f"Failed location validation: {loc_col_name} at row {idx + 2} - Reason: {message}")
                 except Exception as e:
                     print(f"Error in location validation for {loc_col_name} at row {idx + 2}: {e}")
 
+    # Save the workbook after validation and highlighting
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
+
 
 
 
