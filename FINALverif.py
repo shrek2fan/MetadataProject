@@ -42,6 +42,58 @@ def load_city_data(city_dataset_path):
     return city_info
 
 
+# List of valid series names
+valid_series = [
+    'Martin Amador, 1856-1904',
+    'Refugio Ruiz de Amador, 1860-1907',
+    'Clotilde Amador de Terrazas, 1886-1945',
+    'Antonio Terrazas, 1892-1919',
+    'Corina Amador de Campbell, 1893-1924',
+    'Emilia Amador de García, 1875-1942',
+    'Jesus García, 1874-1922',
+    'Francisco (Frank) Amador, 1883-1926',
+    'Juan Amador, 1879-1909',
+    'Julieta Amador de García, 1888-1949',
+    'María Amador de Daguerre, 1886-1939',
+    'Martin A. Amador, Jr., 1880-1889',
+    'Miscellaneous, 1868-1944',
+    'Personal Papers, 1892-1948'
+]
+
+def validate_series(value):
+    """
+    Validates the series field against the list of approved series names.
+    
+    Parameters:
+    - value (str): The series name to validate.
+    
+    Returns:
+    - (bool, str, str): Tuple indicating if validation passed, the color for highlighting ('red' or 'yellow'), 
+      and an error message.
+    """
+    # Clean up the input value
+    cleaned_value = value.strip()
+    
+    # Debug: Start validation process
+    print(f"Debug: Starting validation for SERIES value '{cleaned_value}'")
+    
+    # Check if the value matches any of the valid series exactly
+    if cleaned_value in valid_series:
+        print(f"Debug: Series name '{cleaned_value}' found in approved list. Validation passed.")
+        return True, "", "Valid series name"
+    
+    # Check if it has the correct format but doesn't match exactly (format issue)
+    matching_series = [s for s in valid_series if s.lower() == cleaned_value.lower()]
+    if matching_series:
+        print(f"Debug: Format error for series '{cleaned_value}'. Expected exact format '{matching_series[0]}'.")
+        return False, "red", f"Format error: Expected '{matching_series[0]}'"
+    
+    # If it doesn't exist in the valid series list at all
+    print(f"Debug: Series name '{cleaned_value}' not found in dataset.")
+    return False, "yellow", "Series name not found in dataset"
+
+
+
 def is_valid_city_related(row, city_column, country_column, state_column, coord_column, language):
     city = str(row.get(city_column, '')).strip().lower() if pd.notna(row.get(city_column)) else ''
     country = row.get(country_column, '').strip() if pd.notna(row.get(country_column)) else ''
@@ -152,6 +204,9 @@ def is_valid_box_folder(value):
         return False, None, "Box Folder format is incorrect, expected 'XX_XX' with two digits before and after the underscore"
     return True, None, "Valid"
 
+
+
+
 def is_valid_collection_name(value, language="English"):
     if not isinstance(value, str):
         return False, None, "Collection Name is not a string"
@@ -161,6 +216,9 @@ def is_valid_collection_name(value, language="English"):
         return False, None, f"Collection Name does not match expected value for {language}. Expected '{expected_name}' but got '{value}'"
     
     return True, None, "Valid"
+
+
+
 
 def is_valid_date(value):
     if pd.isna(value):
@@ -176,12 +234,17 @@ def is_valid_date(value):
     except (ValueError, TypeError):
         return False, None, "Date format is invalid. Expected 'YYYY-MM-DD' or 'YYYY-MM'"
 
+
+
+
 def is_valid_year(value):
     if not isinstance(value, int):
         return False, None, "Year is not an integer"
     if not (1000 <= value <= 9999):
         return False, None, "Year is out of valid range (1000-9999)"
     return True, None, "Valid"
+
+
 
 def validate_name_field(value, authorized_names):
     """
@@ -197,8 +260,11 @@ def validate_name_field(value, authorized_names):
     - (bool, str, str): Validation status, fill color ('red', 'yellow', or None), and message.
     """
     known_unknown_values = {
-        "Unknown sender", "Remitente desconocido",
-        "Unknown recipient", "Destinatario desconocido"
+        "FROM" : {"Unknown sender"},
+        "ES..FROM": {"Remitente desconocido"},
+        "TO" : {"Unknown recipient"},
+        "ES..TO": {"Destinatario desconocido"}
+
     }
 
     # Clean up the input value
@@ -272,6 +338,9 @@ column_validation_rules = {
     "ES..FROM": lambda x: validate_name_field(x, authorized_names),
     "TO": lambda x: validate_name_field(x, authorized_names),
     "ES..TO": lambda x: validate_name_field(x, authorized_names),
+    # Add validation rules to the main column validation structure
+    "SERIES" : validate_series,
+    "ES..SERIES" : validate_series
 }
 
 location_validation_rules = {
