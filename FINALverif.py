@@ -276,6 +276,32 @@ def is_valid_collection_name(value, language="English"):
     return True, None, "Valid"
 
 
+def validate_collection_number(value):
+    """
+    Validates the collection number for both English and Spanish columns.
+    The only valid values are 'Ms0004' and 'Ms0071'.
+
+    Parameters:
+    - value (str): The collection number to validate.
+
+    Returns:
+    - (bool, str, str): Tuple indicating if validation passed, the color for highlighting ('red'), 
+      and an error message.
+    """
+    valid_values = {"Ms0004", "Ms0071"}
+
+    # Clean and normalize the value
+    cleaned_value = str(value).strip()
+
+    if cleaned_value in valid_values:
+        print(f"Validation successful: Collection number '{cleaned_value}' is valid.")
+        return True, "", "Valid collection number"
+    else:
+        print(f"Failed validation: Collection number '{cleaned_value}' is invalid.")
+        return False, "red", f"Invalid collection number: Expected one of {valid_values}, but got '{cleaned_value}'"
+
+
+
 
 
 def is_valid_date(value):
@@ -417,7 +443,6 @@ print("Loaded authorized names:", authorized_names)
 
 # The `verify_file` function and main script setup remain the same, using `column_validation_rules`.
 
-
 def verify_file(input_file, output_file):
     # Load the Excel file and worksheet
     wb = load_workbook(input_file)
@@ -468,6 +493,33 @@ def verify_file(input_file, output_file):
                 except Exception as e:
                     print(f"Error validating {col_name} at row {idx + 2}: {e}")
         
+        # Validate SERIES and ES..SERIES columns
+        if "SERIES" in df.columns:
+            value = row["SERIES"]
+            try:
+                is_valid, color, message = validate_series(value, series_values)
+                if is_valid:
+                    print(f"Validation successful: SERIES at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("SERIES") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: SERIES at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating SERIES at row {idx + 2}: {e}")
+
+        if "ES..SERIES" in df.columns:
+            value = row["ES..SERIES"]
+            try:
+                is_valid, color, message = validate_series(value, series_values)
+                if is_valid:
+                    print(f"Validation successful: ES..SERIES at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("ES..SERIES") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: ES..SERIES at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating ES..SERIES at row {idx + 2}: {e}")
+
         # Validate COLLECTION_NAME and ES..COLLECTION_NAME
         if "COLLECTION_NAME" in df.columns:
             value = row["COLLECTION_NAME"]
@@ -513,6 +565,7 @@ def verify_file(input_file, output_file):
     # Save the workbook after validation and highlighting
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
+
 
 
 
