@@ -43,7 +43,7 @@ def load_city_data(city_dataset_path):
 
 
 # List of valid series names
-valid_series = [
+series_values = [
     'Martin Amador, 1856-1904',
     'Refugio Ruiz de Amador, 1860-1907',
     'Clotilde Amador de Terrazas, 1886-1945',
@@ -60,37 +60,95 @@ valid_series = [
     'Personal Papers, 1892-1948'
 ]
 
-def validate_series(value):
+def validate_series(value, series_values):
     """
-    Validates the series field against the list of approved series names.
-    
+    Validates if a series value is in the approved list and has the correct format.
+
     Parameters:
-    - value (str): The series name to validate.
-    
+    - value (str): The series value to validate.
+    - series_values (list): List of approved series names.
+
     Returns:
-    - (bool, str, str): Tuple indicating if validation passed, the color for highlighting ('red' or 'yellow'), 
-      and an error message.
+    - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and a validation message.
     """
-    # Clean up the input value
-    cleaned_value = value.strip()
-    
-    # Debug: Start validation process
-    print(f"Debug: Starting validation for SERIES value '{cleaned_value}'")
-    
-    # Check if the value matches any of the valid series exactly
-    if cleaned_value in valid_series:
+    # Clean the input value
+    cleaned_value = value.strip() if isinstance(value, str) else ''
+    print(f"Debug: Validating series value '{cleaned_value}'")
+
+    # Check if the value is in the approved list
+    if cleaned_value in series_values:
         print(f"Debug: Series name '{cleaned_value}' found in approved list. Validation passed.")
-        return True, "", "Valid series name"
-    
-    # Check if it has the correct format but doesn't match exactly (format issue)
-    matching_series = [s for s in valid_series if s.lower() == cleaned_value.lower()]
+        return True, None, "Valid series name"
+
+    # Check if a similar name exists but doesn't match exactly
+    matching_series = [s for s in series_values if s.lower() == cleaned_value.lower()]
     if matching_series:
-        print(f"Debug: Format error for series '{cleaned_value}'. Expected exact format '{matching_series[0]}'.")
+        print(f"Debug: Series name '{cleaned_value}' found but format is incorrect. Expected '{matching_series[0]}'.")
         return False, "red", f"Format error: Expected '{matching_series[0]}'"
+
+    # If no match is found, highlight in yellow
+    print(f"Debug: Series name '{cleaned_value}' not found in approved list. Highlighting in yellow.")
+    return False, "yellow", "Series name not found in approved list"
+
+
+def validate_box_folder(value, digital_identifier):
+    """
+    Validates that the BOX_FOLDER value matches the corresponding box and folder numbers
+    extracted from the DIGITAL_IDENTIFIER.
+
+    Parameters:
+    - value (str): The BOX_FOLDER value to validate (e.g., '01_07').
+    - digital_identifier (str): The DIGITAL_IDENTIFIER to extract box and folder numbers from (e.g., 'Ms0004_01_07_01.pdf').
+
+    Returns:
+    - (bool, str, str): Validation status, fill color ('red' or 'yellow'), and message.
+    """
+    # Check if both inputs are valid strings
+    if not isinstance(value, str) or not isinstance(digital_identifier, str):
+        return False, "red", "Invalid type: BOX_FOLDER or DIGITAL_IDENTIFIER is not a string"
+
+    # Extract box and folder from DIGITAL_IDENTIFIER using regex
+    match = re.match(r"^Ms\d{4}_(\d{2})_(\d{2})_\d{2}\.pdf$", digital_identifier)
+    if not match:
+        return False, "red", f"Invalid DIGITAL_IDENTIFIER format: '{digital_identifier}'"
+
+    extracted_box, extracted_folder = match.groups()
+    expected_box_folder = f"{extracted_box}_{extracted_folder}"
+
+    # Compare with BOX_FOLDER value
+    if value.strip() != expected_box_folder:
+        return False, "red", f"BOX_FOLDER '{value.strip()}' does not match DIGITAL_IDENTIFIER box '{extracted_box}' and folder '{extracted_folder}'."
+
+    # If everything matches
+    return True, "", "BOX_FOLDER matches DIGITAL_IDENTIFIER"
+
     
-    # If it doesn't exist in the valid series list at all
-    print(f"Debug: Series name '{cleaned_value}' not found in dataset.")
-    return False, "yellow", "Series name not found in dataset"
+
+def validate_collection_name(value, language="English"):
+    """
+    Validates the COLLECTION_NAME or ES..COLLECTION_NAME columns to ensure they match the expected value.
+
+    Parameters:
+    - value (str): The collection name to validate.
+    - language (str): Language of the collection name ("English" or "Spanish").
+
+    Returns:
+    - (bool, str, str): Validation status, fill color ('red' for invalid), and a validation message.
+    """
+    # Define expected constants within the function
+    EXPECTED_COLLECTION_NAME_EN = "Amador Family Correspondence, 1856-1949"
+    EXPECTED_COLLECTION_NAME_ES = "Correspondencia de la familia Amador, 1856-1949"
+
+    # Determine expected value based on language
+    expected_value = (
+        EXPECTED_COLLECTION_NAME_EN if language.lower() == "english" else EXPECTED_COLLECTION_NAME_ES
+    )
+
+    # Check if value matches the expected value
+    if value.strip() == expected_value:
+        return True, None, "Valid"
+    else:
+        return False, "red", f"Collection Name mismatch. Expected '{expected_value}', got '{value.strip()}'"
 
 
 
@@ -360,7 +418,6 @@ print("Loaded authorized names:", authorized_names)
 # The `verify_file` function and main script setup remain the same, using `column_validation_rules`.
 
 
-
 def verify_file(input_file, output_file):
     # Load the Excel file and worksheet
     wb = load_workbook(input_file)
@@ -410,28 +467,55 @@ def verify_file(input_file, output_file):
                             print(f"Failed validation: {col_name} at row {idx + 2} - Reason: {message}")
                 except Exception as e:
                     print(f"Error validating {col_name} at row {idx + 2}: {e}")
+        
+        # Validate COLLECTION_NAME and ES..COLLECTION_NAME
+        if "COLLECTION_NAME" in df.columns:
+            value = row["COLLECTION_NAME"]
+            try:
+                is_valid, color, message = validate_collection_name(value, "English")
+                if is_valid:
+                    print(f"Validation successful: COLLECTION_NAME at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("COLLECTION_NAME") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: COLLECTION_NAME at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating COLLECTION_NAME at row {idx + 2}: {e}")
+        
+        if "ES..COLLECTION_NAME" in df.columns:
+            value = row["ES..COLLECTION_NAME"]
+            try:
+                is_valid, color, message = validate_collection_name(value, "Spanish")
+                if is_valid:
+                    print(f"Validation successful: ES..COLLECTION_NAME at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("ES..COLLECTION_NAME") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: ES..COLLECTION_NAME at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating ES..COLLECTION_NAME at row {idx + 2}: {e}")
                 
-                # Validate location-related columns
-                for loc_col_name, location_func in location_validation_rules.items():
-                    if loc_col_name in df.columns:
-                        try:
-                            is_valid, color, highlight_col, message = location_func(row)
-                            if is_valid:
-                                print(f"Location validation successful: {loc_col_name} at row {idx + 2}")
-                            else:
-                                # Highlight the specific failing column
-                                col_idx = df.columns.get_loc(highlight_col) + 1
-                                ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
-                                print(f"Failed location validation: {loc_col_name} at row {idx + 2} - Reason: {message}")
-                        except Exception as e:
-                            print(f"Error in location validation for {loc_col_name} at row {idx + 2}: {e}")
-
-
-       
+        # Validate location-related columns
+        for loc_col_name, location_func in location_validation_rules.items():
+            if loc_col_name in df.columns:
+                try:
+                    is_valid, color, highlight_col, message = location_func(row)
+                    if is_valid:
+                        print(f"Location validation successful: {loc_col_name} at row {idx + 2}")
+                    else:
+                        # Highlight the specific failing column
+                        col_idx = df.columns.get_loc(highlight_col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                        print(f"Failed location validation: {loc_col_name} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error in location validation for {loc_col_name} at row {idx + 2}: {e}")
 
     # Save the workbook after validation and highlighting
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
+
+
+
 
 
 
