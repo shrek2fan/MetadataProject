@@ -4,6 +4,7 @@ from openpyxl.styles import PatternFill
 import re
 import argparse
 import os
+import datetime 
 
 # Define fill styles for highlighting mistakes
 highlight_fill_red = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
@@ -60,6 +61,47 @@ series_values = [
     'Personal Papers, 1892-1948'
 ]
 
+# RELATIONSHIP 1 and RELATIONSHIP 2 mapping
+relationship_mapping = {
+    "Familia": {
+        "Cuñado y Cuñada", "Cuñados", "Cuñadas", "Esposo y Esposa", "Prometidos", "Hermanas",
+        "Hermanos", "Madre e Hija", "Madre e Hijo", "Padre e Hijo", "Padre e Hija", "Padres e Hijo",
+        "Padres e Hija", "Padre e Hijos", "Primos", "Primas", "Tia y Sobrina", "Tia y Sobrino",
+        "Tio y Sobrina", "Tio y Sobrino", "Tio, Tia y Sobrina", "Suegra y Yerno", "Suegra y Nuera",
+        "Suegro y Yerno", "Abuela y Nieto", "Abuelo y Nieto", "Abuela y Nieta"
+    },
+    "Amigos": { "Compañeros de Escuela" },
+    "Conocidos": set(),
+    "Maestro y Estudiante": set(),
+    "Compadrazgo": set(),
+    "Comunidad": set(),
+    "Iglesia Católica y Feligréses": { "Capellán y Feligrés" },
+    "Socios Comerciales": { " Abogado y Cliente", "Propietario y Prospecto", "Vendedor y Cliente", "Médico y Paciente", "Propietario e Inquilino "}
+}
+
+
+
+# English translation for RELATIONSHIP 1 and RELATIONSHIP 2
+relationship_mapping_english = {
+    "Family": {
+        "Brother-in-law and Sister-in-law", "Brothers-in-law", "Sisters-in-law", "Husband and Wife",
+        "Fiancés", "Sisters", "Siblings", "Mother and Daughter", "Mother and Son", "Father and Son",
+        "Father and Daughter", "Parents and Son", "Parents and Daughter", "Father and Children",
+        "Cousins", "Aunt and Niece", "Aunt and Nephew", "Uncle and Niece", "Uncle and Nephew",
+        "Uncle, Aunt and Niece", "Mother-in-law and Son-in-law", "Mother-in-Law and Daughter-in-Law",
+        "Father-in-law and Son-in-law", "Grandmother and Grandson", "Grandfather and Grandson",
+        "Grandmother and Granddaughter"
+    },
+    "Friends": { "Schoolmates" },
+    "Acquaintances": set(),
+    "Teacher and Student": set(),
+    "God Parenthood": set(),
+    "Community Organization and Citizen": set(),
+    "Catholic Church and Churchgoers": { "Chaplain and Churchgoer" },
+    "Business Partners": { "Lawyer and Client", "Proprietor and Prospect", "Seller and Client",  "Doctor and Patient", "Landlord and Tenant" }
+}
+
+
 def validate_series(value, series_values):
     """
     Validates if a series value is in the approved list and has the correct format.
@@ -89,6 +131,43 @@ def validate_series(value, series_values):
     # If no match is found, highlight in yellow
     print(f"Debug: Series name '{cleaned_value}' not found in approved list. Highlighting in yellow.")
     return False, "yellow", "Series name not found in approved list"
+
+def validate_relationships(rel1_value, rel2_value, mapping, lang, column_name_rel1, column_name_rel2):
+    """
+    Validates RELATIONSHIP 1 and RELATIONSHIP 2 columns.
+
+    Parameters:
+    - rel1_value (str): The value in the RELATIONSHIP 1 column.
+    - rel2_value (str): The value in the RELATIONSHIP 2 column.
+    - mapping (dict): The mapping of RELATIONSHIP 1 terms to valid RELATIONSHIP 2 terms.
+    - lang (str): Language of the validation ("English" or "Spanish").
+    - column_name_rel1 (str): Name of the RELATIONSHIP 1 column being validated.
+    - column_name_rel2 (str): Name of the RELATIONSHIP 2 column being validated.
+
+    Returns:
+    - (bool, str, str): Tuple indicating if validation passed, the color for highlighting ('red' or 'yellow'),
+      and an error message.
+    """
+    try:
+        rel1_cleaned = str(rel1_value).strip()
+        rel2_cleaned = str(rel2_value).strip() if pd.notna(rel2_value) else ""
+
+        # Check if RELATIONSHIP 1 is valid
+        if rel1_cleaned not in mapping:
+            return False, "red", f"Invalid {column_name_rel1} value: {rel1_cleaned} in {lang}"
+
+        # Retrieve valid RELATIONSHIP 2 values for the RELATIONSHIP 1 term
+        valid_rel2 = mapping[rel1_cleaned]
+
+        # If RELATIONSHIP 2 is provided, validate it
+        if rel2_cleaned and rel2_cleaned not in valid_rel2:
+            return False, "red", f"Invalid {column_name_rel2} value: '{rel2_cleaned}' for {column_name_rel1}: '{rel1_cleaned}' in {lang}"
+
+        # If RELATIONSHIP 2 is blank, it's valid
+        return True, "", "Valid relationship values"
+    except Exception as e:
+        return False, "red", f"Error validating relationships in {lang}: {str(e)}"
+
 
 
 def validate_box_folder(value, digital_identifier):
@@ -319,6 +398,91 @@ def is_valid_date(value):
         return False, None, "Date format is invalid. Expected 'YYYY-MM-DD' or 'YYYY-MM'"
 
 
+def extract_date_from_title(title):
+    """
+    Extracts a date from the Title column in the format 'Month Day, Year'
+    and converts it to 'YYYY-MM-DD'.
+    """
+    try:
+        # Match patterns like "January 21, 1898"
+        match = re.search(r'([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})', title)
+        if match:
+            month_str, day, year = match.groups()
+            month = datetime.datetime.strptime(month_str, "%B").month  # Convert month name to number
+            return f"{year}-{month:02d}-{int(day):02d}"  # Format as YYYY-MM-DD
+    except Exception as e:
+        print(f"Error extracting date from title '{title}': {e}")
+    return None
+
+def validate_date_column(date_value, title_value):
+    """
+    Validates a date column value against the Title column.
+    Ensures:
+    1. Correct format: 'YYYY-MM-DD'.
+    2. Matches the extracted date from Title column.
+
+    Parameters:
+    - date_value (str): The value in the DATE or ES..DATE column.
+    - title_value (str): The corresponding Title column value.
+
+    Returns:
+    - (bool, str, str): Tuple of validation status, highlight color, and error message.
+    """
+    # Ensure date_value is in correct format
+    try:
+        if pd.isna(date_value):
+            return False, "yellow", "Date column is empty."
+
+        # Parse date_value to ensure it's in 'YYYY-MM-DD' format
+        parsed_date = pd.to_datetime(date_value, format='%Y-%m-%d', errors='coerce')
+        if pd.isna(parsed_date):
+            return False, "red", "Date format is invalid. Expected 'YYYY-MM-DD'."
+    except Exception as e:
+        return False, "red", f"Error validating date format: {e}"
+
+    # Extract date from title
+    extracted_date = extract_date_from_title(title_value)
+    if not extracted_date:
+        return False, "yellow", f"Unable to extract date from title: {title_value}"
+
+    # Compare extracted date with date_value
+    if extracted_date != date_value.strip():
+        return False, "red", f"Date '{date_value}' does not match extracted date '{extracted_date}' from title."
+
+    return True, "", "Date matches and is valid."
+
+def validate_year(year_value, date_value):
+    """
+    Validates the YEAR and ES..YEAR columns.
+
+    Parameters:
+    - year_value (str): The value in the YEAR or ES..YEAR column.
+    - date_value (str): The value in the DATE or ES..DATE column.
+
+    Returns:
+    - (bool, str, str): Tuple indicating if validation passed, the color for highlighting ('red' or 'yellow'), 
+      and an error message.
+    """
+    try:
+        # Ensure year_value is a 4-digit number
+        if not year_value.isdigit() or len(year_value) != 4:
+            return False, "red", f"Invalid year format: {year_value}"
+
+        # Extract the year from the date_value
+        date_year = date_value.split("-")[0] if "-" in date_value else None
+
+        if not date_year:
+            return False, "red", f"Invalid date format: {date_value}"
+
+        # Ensure the year matches the year from the date
+        if year_value != date_year:
+            return False, "yellow", f"Year '{year_value}' does not match date year '{date_year}'"
+
+        return True, "", "Year validation passed"
+    except Exception as e:
+        return False, "red", f"Error validating year: {str(e)}"
+
+
 
 
 def is_valid_year(value):
@@ -520,6 +684,33 @@ def verify_file(input_file, output_file):
             except Exception as e:
                 print(f"Error validating ES..SERIES at row {idx + 2}: {e}")
 
+        # Validate COLLECTION_NUMBER and ES..COLLECTION_NUMBER using validate_collection_number
+        if "COLLECTION_NUMBER" in df.columns:
+            value = row["COLLECTION_NUMBER"]
+            try:
+                is_valid, color, message = validate_collection_number(value)
+                if is_valid:
+                    print(f"Validation successful: COLLECTION_NUMBER at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("COLLECTION_NUMBER") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: COLLECTION_NUMBER at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating COLLECTION_NUMBER at row {idx + 2}: {e}")
+
+        if "ES..COLLECTION_NUMBER" in df.columns:
+            value = row["ES..COLLECTION_NUMBER"]
+            try:
+                is_valid, color, message = validate_collection_number(value)
+                if is_valid:
+                    print(f"Validation successful: ES..COLLECTION_NUMBER at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("ES..COLLECTION_NUMBER") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: ES..COLLECTION_NUMBER at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating ES..COLLECTION_NUMBER at row {idx + 2}: {e}")
+
         # Validate COLLECTION_NAME and ES..COLLECTION_NAME
         if "COLLECTION_NAME" in df.columns:
             value = row["COLLECTION_NAME"]
@@ -546,6 +737,102 @@ def verify_file(input_file, output_file):
                     print(f"Failed validation: ES..COLLECTION_NAME at row {idx + 2} - Reason: {message}")
             except Exception as e:
                 print(f"Error validating ES..COLLECTION_NAME at row {idx + 2}: {e}")
+
+        # Validate DATE and ES..DATE columns
+        if "DATE" in df.columns:
+            date_value = row["DATE"]
+            title_value = row.get("TITLE", "")  # Ensure Title column exists
+            try:
+                is_valid, color, message = validate_date_column(date_value, title_value)
+                if is_valid:
+                    print(f"Validation successful: DATE at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("DATE") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: DATE at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating DATE at row {idx + 2}: {e}")
+
+        if "ES..DATE" in df.columns:
+            date_value = row["ES..DATE"]
+            title_value = row.get("TITLE", "")  # Ensure Title column exists
+            try:
+                is_valid, color, message = validate_date_column(date_value, title_value)
+                if is_valid:
+                    print(f"Validation successful: ES..DATE at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("ES..DATE") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: ES..DATE at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating ES..DATE at row {idx + 2}: {e}")
+
+        # Validate YEAR column
+        if "YEAR" in df.columns and "DATE" in df.columns:
+            year_value = row["YEAR"]
+            date_value = row["DATE"]
+            try:
+                is_valid, color, message = validate_year(str(year_value), str(date_value))
+                if is_valid:
+                    print(f"Validation successful: YEAR at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("YEAR") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: YEAR at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating YEAR at row {idx + 2}: {e}")
+
+        # Validate ES..YEAR column
+        if "ES..YEAR" in df.columns and "ES..DATE" in df.columns:
+            year_value = row["ES..YEAR"]
+            date_value = row["ES..DATE"]
+            try:
+                is_valid, color, message = validate_year(str(year_value), str(date_value))
+                if is_valid:
+                    print(f"Validation successful: ES..YEAR at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("ES..YEAR") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: ES..YEAR at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating ES..YEAR at row {idx + 2}: {e}")
+
+                # Validate RELATIONSHIP columns
+        if "RELATIONSHIP1" in df.columns and "RELATIONSHIP2" in df.columns:
+            try:
+                is_valid, color, message = validate_relationships(
+                    row["RELATIONSHIP1"], row["RELATIONSHIP2"],
+                    relationship_mapping_english, "English", "RELATIONSHIP1", "RELATIONSHIP2"
+                )
+                if is_valid:
+                    print(f"Validation successful: RELATIONSHIP1 and RELATIONSHIP2 at row {idx + 2}")
+                else:
+                    col_idx_rel1 = df.columns.get_loc("RELATIONSHIP1") + 1
+                    col_idx_rel2 = df.columns.get_loc("RELATIONSHIP2") + 1
+                    ws.cell(row=idx + 2, column=col_idx_rel1).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    ws.cell(row=idx + 2, column=col_idx_rel2).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: RELATIONSHIP1 and RELATIONSHIP2 at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating RELATIONSHIP1 and RELATIONSHIP2 at row {idx + 2}: {e}")
+
+        if "ES..RELATIONSHIP1" in df.columns and "ES..RELATIONSHIP2" in df.columns:
+            try:
+                is_valid, color, message = validate_relationships(
+                    row["ES..RELATIONSHIP1"], row["ES..RELATIONSHIP2"],
+                    relationship_mapping, "Spanish", "ES..RELATIONSHIP1", "ES..RELATIONSHIP2"
+                )
+                if is_valid:
+                    print(f"Validation successful: ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2}")
+                else:
+                    col_idx_rel1 = df.columns.get_loc("ES..RELATIONSHIP1") + 1
+                    col_idx_rel2 = df.columns.get_loc("ES..RELATIONSHIP2") + 1
+                    ws.cell(row=idx + 2, column=col_idx_rel1).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    ws.cell(row=idx + 2, column=col_idx_rel2).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2}: {e}")
+
+
                 
         # Validate location-related columns
         for loc_col_name, location_func in location_validation_rules.items():
@@ -565,6 +852,7 @@ def verify_file(input_file, output_file):
     # Save the workbook after validation and highlighting
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
+
 
 
 
