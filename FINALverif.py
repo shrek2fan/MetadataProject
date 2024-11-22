@@ -382,31 +382,38 @@ def validate_collection_number(value):
 
 def validate_other_places_mentioned(city, city_list):
     """
-    Validates the 'Other Places Mentioned' column for city names.
+    Validates the 'Other Places Mentioned' column by checking city format and existence in the city list.
 
     Parameters:
-    - city (str): The city name to validate.
-    - city_list (set): A set of approved city names from the Maybeee file.
+    - city (str): City name from the column.
+    - city_list (list): List of approved city names.
 
     Returns:
-    - (bool, str, str): Tuple indicating if validation passed, the color for highlighting ('red' or 'yellow'),
-      and an error message.
+    - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
     """
     try:
+        # Clean and validate the city value
         cleaned_city = str(city).strip()
+        print(f"Debug: Starting validation for Other Places Mentioned column with value '{cleaned_city}'")
 
         # Check if the city is in the correct format (e.g., "CityName (StateAbbr.)")
         if not re.match(r"^[A-Za-z\s]+ \([A-Za-z]+\.\)$", cleaned_city):
+            print(f"Debug: Invalid format detected for '{cleaned_city}' in Other Places Mentioned.")
             return False, "red", f"Invalid city format: {cleaned_city}"
 
         # Check if the city exists in the approved list
         if cleaned_city not in city_list:
+            print(f"Debug: City '{cleaned_city}' not found in approved list for Other Places Mentioned.")
             return False, "yellow", f"City '{cleaned_city}' not found in approved list"
 
-        # If the format is correct and the city exists
+        # If everything is valid
+        print(f"Debug: Validation passed for '{cleaned_city}' in Other Places Mentioned.")
         return True, "", "Valid city name"
+
     except Exception as e:
-        return False, "red", f"Error validating city name: {str(e)}"
+        print(f"Error validating Other Places Mentioned with value '{city}': {e}")
+        return False, "red", f"Error validating city: {e}"
+
 
 
 
@@ -826,7 +833,7 @@ def verify_file(input_file, output_file):
             except Exception as e:
                 print(f"Error validating ES..YEAR at row {idx + 2}: {e}")
 
-                # Validate RELATIONSHIP columns
+        # Validate RELATIONSHIP columns
         if "RELATIONSHIP1" in df.columns and "RELATIONSHIP2" in df.columns:
             try:
                 is_valid, color, message = validate_relationships(
@@ -861,23 +868,20 @@ def verify_file(input_file, output_file):
             except Exception as e:
                 print(f"Error validating ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2}: {e}")
 
-       # Validate the 'Other Places Mentioned' column
+        # Validate 'Other Places Mentioned' column
         if "Other Places Mentioned" in df.columns:
-                try:
-                    value = row["Other Places Mentioned"]
-                    is_valid, color, message = validate_other_places_mentioned(value, city_info)
-                    if is_valid:
-                        print(f"Validation successful: Other Places Mentioned at row {idx + 2}")
-                    else:
-                        col_idx = df.columns.get_loc("Other Places Mentioned") + 1
-                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
-                        print(f"Failed validation: Other Places Mentioned at row {idx + 2} - Reason: {message}")
-                except Exception as e:
-                    print(f"Error validating Other Places Mentioned at row {idx + 2}: {e}")
+            value = row["Other Places Mentioned"]
+            try:
+                is_valid, color, message = validate_other_places_mentioned(value, city_info)
+                if is_valid:
+                    print(f"Validation successful: Other Places Mentioned at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("Other Places Mentioned") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    print(f"Failed validation: Other Places Mentioned at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating Other Places Mentioned at row {idx + 2}: {e}")
 
-
-
-                        
         # Validate location-related columns
         for loc_col_name, location_func in location_validation_rules.items():
             if loc_col_name in df.columns:
@@ -896,6 +900,7 @@ def verify_file(input_file, output_file):
     # Save the workbook after validation and highlighting
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
+
 
 
 
