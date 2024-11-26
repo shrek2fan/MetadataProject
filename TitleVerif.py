@@ -43,17 +43,48 @@ def ensure_series(col):
     else:
         return pd.Series([col])
 
-# Define column-specific cleaning functions
-def clean_digital_identifier(col):
-    col = ensure_series(col).astype(str).fillna('')  
-    def clean_value(x):
-        if pd.isnull(x):
-            return x
-        x = str(x).strip().lower()
-        x = x.replace("ms0004", "Ms0004")  # Ensure the "Ms" is capitalized
-        return x if x.endswith('.pdf') else f"{x}.pdf"
+
+def clean_digital_identifier(df, col_name):
+    """
+    Cleans the DIGITAL_IDENTIFIER columns by ensuring the format is correct and
+    numbers increment sequentially starting at row 2.
+
+    Parameters:
+    - df (pd.DataFrame): The DataFrame containing the column to be cleaned.
+    - col_name (str): The name of the column to clean.
+
+    Returns:
+    - pd.Series: A cleaned column with proper DIGITAL_IDENTIFIER formatting.
+    """
+    col = df[col_name].fillna('').astype(str)
     
-    return col.apply(clean_value)
+    # Determine the collection number from valid rows
+    valid_row = col[col.str.contains(r'^Ms\d{4}_')].iloc[0]
+    collection_number = valid_row.split('_')[0]
+    
+    # Ensure at least one valid row exists
+    if collection_number not in ['Ms0004', 'Ms0071']:
+        raise ValueError(f"Unexpected collection number in column '{col_name}': '{collection_number}'.")
+
+    # Extract box and folder numbers
+    try:
+        _, box_number, folder_number, _ = valid_row.split('_')
+    except ValueError:
+        raise ValueError(f"Invalid format in first valid row: '{valid_row}'.")
+
+    # Generate sequential letter numbers starting at 01
+    def generate_identifier(index):
+        letter_number = str(index + 1).zfill(2)  # Sequential number with leading zeros
+        return f"{collection_number}_{box_number}_{folder_number}_{letter_number}.pdf"
+
+    # Create cleaned column
+    cleaned_col = pd.Series([generate_identifier(i) for i in range(len(col))], index=col.index)
+    
+    return cleaned_col
+
+
+
+
 
 def create_full_folder_file_path(digital_identifier_col):
     digital_identifier_col = pd.Series(digital_identifier_col).fillna('').astype(str)
@@ -224,11 +255,30 @@ def clean_dates(row, title_column, date_column, year_column):
     return date_str, year_str
 
 
+def safe_extract_year(date_value):
+    print(f"Raw value: {date_value}")  # Debugging: Log the raw input value
+    try:
+        # If the value is a number or string representation of a number, treat it as a year
+        if isinstance(date_value, (int, float)) or (isinstance(date_value, str) and date_value.isdigit()):
+            return int(date_value)
 
+        # Try to parse as a complete date string
+        date_obj = pd.to_datetime(date_value, errors='coerce')
+        if pd.isnull(date_obj):
+            print(f"Invalid date format: {date_value}")  # Debugging: Log invalid formats
+            return np.nan
+
+        year = date_obj.year
+        print(f"Extracted year: {year} from {date_obj}")  # Debugging: Log extracted year
+        return year
+    except Exception as e:
+        print(f"Error processing '{date_value}': {e}")  # Debugging: Log exceptions
+        return np.nan
 
 def extract_year_from_date(col):
-    col = ensure_series(col)
-    return pd.to_datetime(col, errors='coerce').dt.year
+    col = ensure_series(col)  # Ensure it's a Pandas Series
+    return col.apply(safe_extract_year)
+
 
 
 
@@ -377,43 +427,60 @@ def fill_constant_values(df):
 
     return df
 
-
 def clean_columns_in_sheets(xls, column_cleaning_rules):
+    """
+    Cleans all columns in all sheets of the provided Excel file, applying
+    the specified cleaning rules and transformations.
+
+    Parameters:
+    - xls (pd.ExcelFile): The loaded Excel file with multiple sheets.
+    - column_cleaning_rules (dict): Dictionary mapping column names to cleaning functions.
+
+    Returns:
+    - None: Saves the cleaned DataFrame for each sheet to the global `cleaned_sheets` dictionary.
+    """
     for sheet_name in xls.sheet_names:
+        # Read the sheet into a DataFrame
         df = pd.read_excel(xls, sheet_name=sheet_name)
 
-        # Skip specific sheet
+        # Skip specific sheet (e.g., technical metadata sheet)
         if sheet_name == "GO_Technical metadata":
             print(f"Skipping sheet: {sheet_name}")
             continue
 
         print(f"Processing sheet: {sheet_name}")
-        
+
         # Store the original column order to preserve it later
         original_columns = df.columns.tolist()
 
-        # Fill missing values and replace "no data"
+        # Fill missing values and replace "no data" placeholders
         df = df.fillna('').replace('no data', '')
-        
-        # Apply cleaning functions
+
+        # Apply column-specific cleaning rules
         for column_name, cleaning_func in column_cleaning_rules.items():
             if column_name in df.columns:
                 print(f"Applying cleaning to column: {column_name}")
-                
                 if 'DATE' in column_name:
-                    # For row-wise operations, iterate and assign each row's value
+                    # Handle DATE columns with row-wise operations
                     df[[column_name, f"{column_name}_YEAR"]] = df.apply(lambda row: pd.Series(cleaning_func(row)), axis=1)
                 else:
-                    # For column-wise operations
+                    # Apply cleaning function column-wise
                     df[column_name] = df[column_name].apply(cleaning_func)
 
-        # Reorder the columns to match the original column order
+        # Add DIGITAL_IDENTIFIER transformation explicitly
+        for col_name in ["DIGITAL_IDENTIFIER", "ES..DIGITAL_IDENTIFIER"]:
+            if col_name in df.columns:
+                print(f"Cleaning column: {col_name}")
+                df[col_name] = clean_digital_identifier(df, col_name)
+
+
+        # Reorder columns to match the original column order
         df = df[original_columns]
 
         # Fill constant values for specific columns
         df = fill_constant_values(df)
-                    
-        # Save the cleaned DataFrame in a dictionary
+
+        # Save the cleaned DataFrame into a global dictionary for later use
         cleaned_sheets[sheet_name] = df
 
 
@@ -433,10 +500,8 @@ column_cleaning_rules = {
     # FullFolderFilePath columns
     "FullFolderFilePath": lambda col: create_full_folder_file_path(col),
 
-    # DIGITAL_IDENTIFIER columns
-    "DIGITAL_IDENTIFIER": clean_digital_identifier,
-    "ES..DIGITAL_IDENTIFIER": clean_digital_identifier,
-    
+
+
     # TITLE columns
     "ES..TITLE": lambda col: clean_title(col, language="Spanish"),
     "TITLE": clean_title_english,

@@ -379,41 +379,56 @@ def validate_collection_number(value):
         print(f"Failed validation: Collection number '{cleaned_value}' is invalid.")
         return False, "red", f"Invalid collection number: Expected one of {valid_values}, but got '{cleaned_value}'"
 
-
-def validate_other_places_mentioned(city, city_list):
+def validate_other_places_mentioned(city, city_info):
     """
     Validates the 'Other Places Mentioned' column by checking city format and existence in the city list.
 
     Parameters:
-    - city (str): City name from the column.
-    - city_list (list): List of approved city names.
+    - city (str): City name(s) from the column, separated by '[|]'.
+    - city_info (dict): Dictionary containing city data for validation.
 
     Returns:
     - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
     """
     try:
+        # Debugging log
+        print(f"Debug: Starting validation for 'Other Places Mentioned' with value: '{city}'")
+
         # Clean and validate the city value
         cleaned_city = str(city).strip()
-        print(f"Debug: Starting validation for Other Places Mentioned column with value '{cleaned_city}'")
+        print(f"Debug: Cleaned city value: '{cleaned_city}'")
 
-        # Check if the city is in the correct format (e.g., "CityName (StateAbbr.)")
-        if not re.match(r"^[A-Za-z\s]+ \([A-Za-z]+\.\)$", cleaned_city):
-            print(f"Debug: Invalid format detected for '{cleaned_city}' in Other Places Mentioned.")
-            return False, "red", f"Invalid city format: {cleaned_city}"
+        # Split multiple cities using the separator
+        cities = cleaned_city.split('[|]')
+        invalid_format = []
+        not_found = []
 
-        # Check if the city exists in the approved list
-        if cleaned_city not in city_list:
-            print(f"Debug: City '{cleaned_city}' not found in approved list for Other Places Mentioned.")
-            return False, "yellow", f"City '{cleaned_city}' not found in approved list"
+        for city in cities:
+            city = city.strip()
+            # Validate the format (e.g., "CityName (StateAbbr.)")
+            if not re.match(r"^[A-Za-z\s]+ \([A-Za-z]+\.\)$", city):
+                invalid_format.append(city)
+                continue
+
+            # Validate if the city exists in the dataset
+            city_key = (city.lower(), 'english')  # Assuming English for simplicity; adjust as needed
+            if city_key not in city_info:
+                not_found.append(city)
+
+        # Return appropriate validation result
+        if invalid_format:
+            return False, "red", f"Invalid city format(s): {', '.join(invalid_format)}"
+        if not_found:
+            return False, "yellow", f"City(s) not found in the approved city list: {', '.join(not_found)}"
 
         # If everything is valid
-        print(f"Debug: Validation passed for '{cleaned_city}' in Other Places Mentioned.")
-        return True, "", "Valid city name"
+        print(f"Debug: Validation passed for cities '{cleaned_city}' in Other Places Mentioned.")
+        return True, "", "Valid city names"
 
     except Exception as e:
-        print(f"Error validating Other Places Mentioned with value '{city}': {e}")
+        # Debugging log for any unexpected errors
+        print(f"Error validating 'Other Places Mentioned' with value '{city}': {e}")
         return False, "red", f"Error validating city: {e}"
-
 
 
 
@@ -595,6 +610,842 @@ def is_valid_subject_lcsh(value, approved_subjects, language="english"):
     if invalid_terms:
         return False, "yellow", f"Terms not found in vocabulary: {invalid_terms}"
     return True, None, "Valid"
+
+def validate_extent(value, language):
+    """
+    Validates the EXTENT and ES..EXTENT columns for proper singular/plural usage,
+    correct language inside the brackets, and correct format.
+
+    Parameters:
+    - value (str): The extent value to validate.
+    - language (str): The language of the extent ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating EXTENT value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: EXTENT value is empty or missing.")
+            return False, "yellow", "Extent value is empty or missing."
+
+        # Define patterns for English and Spanish
+        if language == "english":
+            pattern = r"^(\d+) leaf(?:ves)? \[(\d+) page(?:s)?\]$"
+            singular_format = "1 leaf"
+        elif language == "spanish":
+            pattern = r"^(\d+) hoja(?:s)? \[(\d+) página(?:s)?\]$"
+            singular_format = "1 hoja"
+        else:
+            return False, "red", f"Unsupported language: {language}"
+
+        # Match against the pattern
+        match = re.match(pattern, value.strip())
+        if not match:
+            print(f"Debug: Invalid format detected for EXTENT value '{value}'.")
+            return False, "red", f"Invalid format for EXTENT value: '{value}'"
+
+        # Extract leaves and pages
+        leaves, pages = map(int, match.groups())
+        print(f"Debug: Parsed leaves = {leaves}, pages = {pages}")
+
+        # Validate singular/plural agreement
+        expected_brackets = f"[{pages} página{'s' if pages > 1 else ''}]" if language == "spanish" else f"[{pages} page{'s' if pages > 1 else ''}]"
+        expected_value = f"{singular_format} {expected_brackets}" if leaves == 1 else f"{leaves} {'hojas' if language == 'spanish' else 'leaves'} {expected_brackets}"
+
+        if value.strip() != expected_value:
+            print(f"Debug: Incorrect format for EXTENT. Expected '{expected_value}', but got '{value.strip()}'.")
+            return False, "red", f"Expected '{expected_value}', but got '{value.strip()}'"
+
+        # If all checks pass
+        print(f"Debug: Validation passed for EXTENT value '{value}'.")
+        return True, "", "Valid EXTENT value"
+
+    except Exception as e:
+        print(f"Error validating EXTENT value '{value}': {e}")
+        return False, "red", f"Error validating EXTENT value: {e}"
+
+
+# Allowed values for PHYSICAL_DESCRIPTION and ES..PHYSICAL_DESCRIPTION columns
+PHYSICAL_DESCRIPTION_VALUES = {
+    "de tinta azul": "blue ink",
+    "de tinta morada": "purple ink",
+    "de tinta negra": "black ink",
+    "de tinta plateada": "silver ink",
+    "de tinta verde": "green ink",
+    "de tinta dorada": "gold ink",
+    "de tinta roja": "red ink",
+    "lápiz": "pencil",
+    "lápiz azul": "blue pencil",
+    "lápiz morado": "purple pencil",
+    "crayones": "crayons",
+    "escrito a máquina tinta negra": "typewritten black ink",
+    "escrito a máquina tinta azul": "typewritten blue ink",
+    "escrito a máquina tinta verde": "typewritten green ink",
+    "escrito a máquina tinta roja": "typewritten red ink",
+    "escrito a máquina tinta morada": "typewritten purple ink",
+    "acuarela": "watercolor (paint)",
+    "papel cuadriculado": "graph paper",
+    "papel en blanco": "blank paper",
+    "papel rayado": "ruled paper",
+    "papel sin rayas": "unruled paper",
+    "papel de color": "colored paper",
+    "papelería": "stationery",
+    "papelería de luto": "mourning stationery",
+    "papel con membrete": "letterheads",
+    "papel impreso con tipografía": "letterpress printed paper",
+    "cuadernos de tipografía": "letterpress copybooks",
+    "sobre": "envelope",
+    "tejido": "cloth"
+}
+
+
+def validate_physical_description(value, language):
+    """
+    Validates the PHYSICAL_DESCRIPTION and ES..PHYSICAL_DESCRIPTION columns.
+    Handles multiple terms separated by [|].
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating PHYSICAL_DESCRIPTION value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: PHYSICAL_DESCRIPTION value is empty or missing.")
+            return False, "yellow", "Physical description value is empty or missing."
+
+        # Split terms by [|]
+        terms = [term.strip() for term in value.split("[|]")]
+        print(f"Debug: Parsed terms for validation: {terms}")
+
+        # Validate each term
+        if language == "spanish":
+            invalid_terms = [term for term in terms if term not in PHYSICAL_DESCRIPTION_VALUES]
+            if invalid_terms:
+                print(f"Debug: Invalid Spanish terms detected: {invalid_terms}")
+                return False, "red", f"Invalid Spanish terms: {invalid_terms}"
+        elif language == "english":
+            reverse_mapping = {v: k for k, v in PHYSICAL_DESCRIPTION_VALUES.items()}  # Reverse map English to Spanish
+            invalid_terms = [term for term in terms if term not in reverse_mapping]
+            if invalid_terms:
+                print(f"Debug: Invalid English terms detected: {invalid_terms}")
+                return False, "red", f"Invalid English terms: {invalid_terms}"
+        else:
+            return False, "red", f"Unsupported language: {language}"
+
+        # If all checks pass
+        print(f"Debug: Validation passed for PHYSICAL_DESCRIPTION value '{value}'.")
+        return True, "", "Valid PHYSICAL_DESCRIPTION value"
+
+    except Exception as e:
+        print(f"Error validating PHYSICAL_DESCRIPTION value '{value}': {e}")
+        return False, "red", f"Error validating PHYSICAL_DESCRIPTION value: {e}"
+
+
+# Allowed values for DIGITAL_PUBLISHER and ES..DIGITAL_PUBLISHER
+DIGITAL_PUBLISHER_ENGLISH = "New Mexico State University Library"
+DIGITAL_PUBLISHER_SPANISH = "Biblioteca de la Universidad Estatal de Nuevo México"
+
+
+def validate_digital_publisher(value, language):
+    """
+    Validates the DIGITAL_PUBLISHER and ES..DIGITAL_PUBLISHER columns.
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating DIGITAL_PUBLISHER value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: DIGITAL_PUBLISHER value is empty or missing.")
+            return False, "yellow", "Digital publisher value is empty or missing."
+
+        value = value.strip()
+        if language == "english" and value != DIGITAL_PUBLISHER_ENGLISH:
+            print(f"Debug: Invalid English DIGITAL_PUBLISHER value: '{value}'")
+            return False, "red", f"Expected '{DIGITAL_PUBLISHER_ENGLISH}', but got '{value}'"
+        elif language == "spanish" and value != DIGITAL_PUBLISHER_SPANISH:
+            print(f"Debug: Invalid Spanish DIGITAL_PUBLISHER value: '{value}'")
+            return False, "red", f"Expected '{DIGITAL_PUBLISHER_SPANISH}', but got '{value}'"
+
+        # If all checks pass
+        print(f"Debug: Validation passed for DIGITAL_PUBLISHER value '{value}'.")
+        return True, "", "Valid DIGITAL_PUBLISHER value"
+
+    except Exception as e:
+        print(f"Error validating DIGITAL_PUBLISHER value '{value}': {e}")
+        return False, "red", f"Error validating DIGITAL_PUBLISHER value: {e}"
+    
+
+
+    # Allowed values for SOURCE and ES..SOURCE
+SOURCE_ENGLISH = "NMSU Library Archives and Special Collections"
+SOURCE_SPANISH = "Archivos y colecciones especiales de la biblioteca de NMSU"
+
+def validate_source(value, language):
+    """
+    Validates the SOURCE and ES..SOURCE columns.
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating SOURCE value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: SOURCE value is empty or missing.")
+            return False, "yellow", "Source value is empty or missing."
+
+        value = value.strip()
+        if language == "english" and value != SOURCE_ENGLISH:
+            print(f"Debug: Invalid English SOURCE value: '{value}'")
+            return False, "red", f"Expected '{SOURCE_ENGLISH}', but got '{value}'"
+        elif language == "spanish" and value != SOURCE_SPANISH:
+            print(f"Debug: Invalid Spanish SOURCE value: '{value}'")
+            return False, "red", f"Expected '{SOURCE_SPANISH}', but got '{value}'"
+
+        # If all checks pass
+        print(f"Debug: Validation passed for SOURCE value '{value}'.")
+        return True, "", "Valid SOURCE value"
+
+    except Exception as e:
+        print(f"Error validating SOURCE value '{value}': {e}")
+        return False, "red", f"Error validating SOURCE value: {e}"
+
+
+# Allowed values for UNIT and ES..UNIT
+UNIT_ENGLISH = "Rio Grande Historical Collections"
+UNIT_SPANISH = "Colecciones históricas de Río Grande"
+
+
+def validate_unit(value, language):
+    """
+    Validates the UNIT and ES..UNIT columns.
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating UNIT value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: UNIT value is empty or missing.")
+            return False, "yellow", "Unit value is empty or missing."
+
+        value = value.strip()
+        if language == "english" and value != UNIT_ENGLISH:
+            print(f"Debug: Invalid English UNIT value: '{value}'")
+            return False, "red", f"Expected '{UNIT_ENGLISH}', but got '{value}'"
+        elif language == "spanish" and value != UNIT_SPANISH:
+            print(f"Debug: Invalid Spanish UNIT value: '{value}'")
+            return False, "red", f"Expected '{UNIT_SPANISH}', but got '{value}'"
+
+        # If all checks pass
+        print(f"Debug: Validation passed for UNIT value '{value}'.")
+        return True, "", "Valid UNIT value"
+
+    except Exception as e:
+        print(f"Error validating UNIT value '{value}': {e}")
+        return False, "red", f"Error validating UNIT value: {e}"
+
+
+# Allowed languages for LANGUAGE and ES..LANGUAGE columns
+VALID_LANGUAGES_ENGLISH = {"English", "Spanish", "French", "Japanese"}
+VALID_LANGUAGES_SPANISH = {"Inglés", "Español", "Francés", "Japonés"}
+
+
+def validate_language(value, language):
+    """
+    Validates the LANGUAGE and ES..LANGUAGE columns.
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating LANGUAGE value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: LANGUAGE value is empty or missing.")
+            return False, "yellow", "Language value is empty or missing."
+
+        # Split the languages using the separator "[|]"
+        languages = [lang.strip() for lang in value.split("[|]")]
+
+        # Determine the valid set of languages based on column language
+        valid_languages = (
+            VALID_LANGUAGES_ENGLISH if language == "english" else VALID_LANGUAGES_SPANISH
+        )
+
+        # Check each language in the cell
+        for lang in languages:
+            if lang not in valid_languages:
+                print(f"Debug: Invalid language '{lang}' in column '{language}'.")
+                return False, "red", f"Invalid language: '{lang}'"
+
+        # If all languages are valid
+        print(f"Debug: All languages '{languages}' are valid in column '{language}'.")
+        return True, "", "Valid LANGUAGE value"
+
+    except Exception as e:
+        print(f"Error validating LANGUAGE value '{value}': {e}")
+        return False, "red", f"Error validating LANGUAGE value: {e}"
+
+
+# Allowed values for FORMAT and ES..FORMAT
+FORMAT_ENGLISH = "application/pdf"
+FORMAT_SPANISH = "la aplicación/pdf"
+
+def validate_format(value, language):
+    """
+    Validates the FORMAT and ES..FORMAT columns.
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating FORMAT value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: FORMAT value is empty or missing.")
+            return False, "yellow", "Format value is empty or missing."
+
+        value = value.strip()
+        if language == "english" and value != FORMAT_ENGLISH:
+            print(f"Debug: Invalid English FORMAT value: '{value}'")
+            return False, "red", f"Expected '{FORMAT_ENGLISH}', but got '{value}'"
+        elif language == "spanish" and value != FORMAT_SPANISH:
+            print(f"Debug: Invalid Spanish FORMAT value: '{value}'")
+            return False, "red", f"Expected '{FORMAT_SPANISH}', but got '{value}'"
+
+        # If all checks pass
+        print(f"Debug: Validation passed for FORMAT value '{value}'.")
+        return True, "", "Valid FORMAT value"
+
+    except Exception as e:
+        print(f"Error validating FORMAT value '{value}': {e}")
+        return False, "red", f"Error validating FORMAT value: {e}"
+
+
+# Allowed values for TYPE and ES..TYPE
+TYPE_ENGLISH = "Text"
+TYPE_SPANISH = "Texto"
+
+def validate_type(value, language):
+    """
+    Validates the TYPE and ES..TYPE columns.
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating TYPE value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: TYPE value is empty or missing.")
+            return False, "yellow", "Type value is empty or missing."
+
+        value = value.strip()
+        if language == "english" and value != TYPE_ENGLISH:
+            print(f"Debug: Invalid English TYPE value: '{value}'")
+            return False, "red", f"Expected '{TYPE_ENGLISH}', but got '{value}'"
+        elif language == "spanish" and value != TYPE_SPANISH:
+            print(f"Debug: Invalid Spanish TYPE value: '{value}'")
+            return False, "red", f"Expected '{TYPE_SPANISH}', but got '{value}'"
+
+        # If all checks pass
+        print(f"Debug: Validation passed for TYPE value '{value}'.")
+        return True, "", "Valid TYPE value"
+
+    except Exception as e:
+        print(f"Error validating TYPE value '{value}': {e}")
+        return False, "red", f"Error validating TYPE value: {e}"
+
+
+
+# Allowed values for MEDIUM_AAT and ES..MEDIUM_AAT
+MEDIUM_ENGLISH = {
+    "correspondence artifacts",
+    "personal correspondence",
+    "commercial correspondence",
+    "legal correspondence"
+}
+MEDIUM_SPANISH = {
+    "artefactos de correspondencia",
+    "correspondencia personal",
+    "correspondencia comercial",
+    "correspondencia legal"
+}
+
+
+def validate_medium(value, language):
+    """
+    Validates the MEDIUM_AAT and ES..MEDIUM_AAT columns.
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating MEDIUM value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: MEDIUM value is empty or missing.")
+            return False, "yellow", "Medium value is empty or missing."
+
+        value = value.strip()
+        valid_values = MEDIUM_ENGLISH if language == "english" else MEDIUM_SPANISH
+
+        if value not in valid_values:
+            print(f"Debug: Invalid {language.upper()} MEDIUM value: '{value}'")
+            return False, "red", f"Invalid medium: '{value}'. Expected one of {valid_values}"
+
+        # If all checks pass
+        print(f"Debug: Validation passed for MEDIUM value '{value}'.")
+        return True, "", "Valid MEDIUM value"
+
+    except Exception as e:
+        print(f"Error validating MEDIUM value '{value}': {e}")
+        return False, "red", f"Error validating MEDIUM value: {e}"
+    
+# Allowed values for GENRE_AAT and ES..GENRE_AAT
+GENRE_VALUES = {
+    "advertisements": "anuncios publicitarios",
+    "announcements": "anuncios",
+    "anniversary announcements": "anuncios de aniversario",
+    "wedding announcements": "anuncios de boda",
+    "graduation announcements": "anuncios de graduación",
+    "birth announcements": "anuncios de nacimiento",
+    "business announcements": "anuncios comerciales",
+    "award announcements": "anuncios de premios",
+    "funeral announcements": "anuncios funerarios",
+    "business letters": "cartas comerciales",
+    "invitations": "invitaciones",
+    "manuscripts (documents)": "manuscritos",
+    "typescripts": "manuscritos dactilografiados",
+    "picture postcards": "tarjetas postales ilustradas",
+    "postcards": "tarjetas postales",
+    "telegrams": "telegramas",
+    "programs (documents)": "programas",
+    "concert programs": "programas de conciertos",
+    "dance cards": "tarjetas de baile",
+    "birthday cards": "tarjetas de cumpleaños",
+    "holiday cards": "tarjetas de festividades",
+    "memorial cards": "tarjetas de memorial",
+    "devotional cards": "tarjetas devocionales",
+    "get well cards": "tarjetas de mejoría",
+    "greeting cards": "tarjetas de felicitación",
+    "clippings (information artifacts)": "recortes",
+    "sympathy cards": "tarjetas de pésame",
+    "brochures": "folletos (publicidad)",
+    "business cards": "tarjetas comerciales",
+    "notes (documents)": "notas",
+    "social cards": "tarjetas sociales",
+    "tickets": "billetes",
+    "prescriptions": "prescripciones",
+    "receipts (financial records)": "recibo (carta de pago)"
+}
+
+
+def validate_genre(value, language):
+    """
+    Validates the GENRE_AAT and ES..GENRE_AAT columns.
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating GENRE value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: GENRE value is empty or missing.")
+            return False, "yellow", "Genre value is empty or missing."
+
+        value = value.strip()
+        valid_values = GENRE_VALUES.keys() if language == "english" else GENRE_VALUES.values()
+
+        if value not in valid_values:
+            print(f"Debug: Invalid {language.upper()} GENRE value: '{value}'")
+            return False, "red", f"Invalid genre: '{value}'. Expected one of {list(valid_values)}"
+
+        # If all checks pass
+        print(f"Debug: Validation passed for GENRE value '{value}'.")
+        return True, "", "Valid GENRE value"
+
+    except Exception as e:
+        print(f"Error validating GENRE value '{value}': {e}")
+        return False, "red", f"Error validating GENRE value: {e}"
+    
+
+# Allowed values for ACCESS_RIGHTS and ES..ACCESS_RIGHTS
+ACCESS_RIGHTS_ENGLISH = "Open for re-use"
+ACCESS_RIGHTS_SPANISH = "Abierto para la reutilización"
+
+def validate_access_rights(value, language):
+    """
+    Validates the ACCESS_RIGHTS and ES..ACCESS_RIGHTS columns.
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating ACCESS_RIGHTS value '{value}' in language '{language}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: ACCESS_RIGHTS value is empty or missing.")
+            return False, "yellow", "Access rights value is empty or missing."
+
+        value = value.strip()
+        expected_value = ACCESS_RIGHTS_ENGLISH if language == "english" else ACCESS_RIGHTS_SPANISH
+
+        if value != expected_value:
+            print(f"Debug: Invalid {language.upper()} ACCESS_RIGHTS value: '{value}'")
+            return False, "red", f"Invalid access rights: '{value}'. Expected '{expected_value}'"
+
+        # If all checks pass
+        print(f"Debug: Validation passed for ACCESS_RIGHTS value '{value}'.")
+        return True, "", "Valid ACCESS_RIGHTS value"
+
+    except Exception as e:
+        print(f"Error validating ACCESS_RIGHTS value '{value}': {e}")
+        return False, "red", f"Error validating ACCESS_RIGHTS value: {e}"
+
+
+def validate_metadata_cataloger(value):
+    """
+    Validates the METADATA_CATALOGER and ES..METADATA_CATALOGER columns.
+
+    Parameters:
+    - value (str): The value to validate.
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating METADATA_CATALOGER value '{value}'")
+
+        # Ensure the value is not empty or NaN
+        if pd.isna(value) or str(value).strip() == "":
+            return False, "yellow", "Metadata cataloger value is empty or missing."
+
+        value = value.strip()
+
+        # Regular expression to match 'LastName, FirstName' format
+        if not re.match(r"^[A-Za-z]+, [A-Za-z]+$", value):
+            return False, "red", f"Invalid format: '{value}'. Expected 'LastName, FirstName'."
+
+        # Validation passed
+        print(f"Debug: Validation passed for METADATA_CATALOGER value '{value}'.")
+        return True, "", "Valid METADATA_CATALOGER value"
+
+    except Exception as e:
+        print(f"Error validating METADATA_CATALOGER value '{value}': {e}")
+        return False, "red", f"Error validating METADATA_CATALOGER value: {e}"
+
+
+# Allowed values for OA_DESCRIPTION and ES..OA_DESCRIPTION
+OA_DESCRIPTION_ENGLISH = "This collection is available in both, English and Spanish"
+OA_DESCRIPTION_SPANISH = "Esta colección está disponible en inglés y español"
+
+
+def validate_oa_description(value, language):
+    """
+    Validates the OA_DESCRIPTION and ES..OA_DESCRIPTION columns.
+
+    Parameters:
+    - value (str): The value to validate.
+    - language (str): The language of the column ('english' or 'spanish').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating OA_DESCRIPTION value '{value}' in language '{language}'")
+
+        # Ensure the value is not empty or NaN
+        if pd.isna(value) or str(value).strip() == "":
+            return False, "yellow", "OA_DESCRIPTION value is empty or missing."
+
+        value = value.strip()
+        expected_value = OA_DESCRIPTION_ENGLISH if language == "english" else OA_DESCRIPTION_SPANISH
+
+        if value != expected_value:
+            print(f"Debug: Invalid {language.upper()} OA_DESCRIPTION value: '{value}'")
+            return False, "red", f"Invalid OA_DESCRIPTION: '{value}'. Expected '{expected_value}'"
+
+        # Validation passed
+        print(f"Debug: Validation passed for OA_DESCRIPTION value '{value}'.")
+        return True, "", "Valid OA_DESCRIPTION value"
+
+    except Exception as e:
+        print(f"Error validating OA_DESCRIPTION value '{value}': {e}")
+        return False, "red", f"Error validating OA_DESCRIPTION value: {e}"
+    
+# Allowed value for OA_COLLECTION
+OA_COLLECTION_VALID_VALUE = "10317"
+
+def validate_oa_collection(value):
+    """
+    Validates the OA_COLLECTION column.
+
+    Parameters:
+    - value (str): The value to validate.
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and a validation message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating OA_COLLECTION value '{value}'")
+
+        # Ensure the value is not empty or NaN
+        if pd.isna(value) or str(value).strip() == "":
+            return False, "yellow", "OA_COLLECTION value is empty or missing."
+
+        value = str(value).strip()
+
+        if value != OA_COLLECTION_VALID_VALUE:
+            print(f"Debug: Invalid OA_COLLECTION value: '{value}'. Expected '{OA_COLLECTION_VALID_VALUE}'.")
+            return False, "red", f"Invalid OA_COLLECTION: '{value}'. Expected '{OA_COLLECTION_VALID_VALUE}'."
+
+        # Validation passed
+        print(f"Debug: Validation passed for OA_COLLECTION value '{value}'.")
+        return True, "", "Valid OA_COLLECTION value"
+
+    except Exception as e:
+        print(f"Error validating OA_COLLECTION value '{value}': {e}")
+        return False, "red", f"Error validating OA_COLLECTION value: {e}"
+
+# Allowed value for OA_PROFILE
+OA_PROFILE_VALID_VALUE = "Documents"
+
+def validate_oa_profile(value):
+    """
+    Validates the OA_PROFILE column.
+
+    Parameters:
+    - value (str): The value to validate.
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and a validation message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating OA_PROFILE value '{value}'")
+
+        # Ensure the value is not empty or NaN
+        if pd.isna(value) or str(value).strip() == "":
+            return False, "yellow", "OA_PROFILE value is empty or missing."
+
+        value = str(value).strip()
+
+        if value != OA_PROFILE_VALID_VALUE:
+            print(f"Debug: Invalid OA_PROFILE value: '{value}'. Expected '{OA_PROFILE_VALID_VALUE}'.")
+            return False, "red", f"Invalid OA_PROFILE: '{value}'. Expected '{OA_PROFILE_VALID_VALUE}'."
+
+        # Validation passed
+        print(f"Debug: Validation passed for OA_PROFILE value '{value}'.")
+        return True, "", "Valid OA_PROFILE value"
+
+    except Exception as e:
+        print(f"Error validating OA_PROFILE value '{value}': {e}")
+        return False, "red", f"Error validating OA_PROFILE value: {e}"
+
+
+# Allowed value for OA_STATUS
+OA_STATUS_VALID_VALUE = "PUBLISH"
+
+def validate_oa_status(value):
+    """
+    Validates the OA_STATUS column.
+
+    Parameters:
+    - value (str): The value to validate.
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and a validation message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating OA_STATUS value '{value}'")
+
+        # Ensure the value is not empty or NaN
+        if pd.isna(value) or str(value).strip() == "":
+            return False, "yellow", "OA_STATUS value is empty or missing."
+
+        value = str(value).strip()
+
+        if value != OA_STATUS_VALID_VALUE:
+            print(f"Debug: Invalid OA_STATUS value: '{value}'. Expected '{OA_STATUS_VALID_VALUE}'.")
+            return False, "red", f"Invalid OA_STATUS: '{value}'. Expected '{OA_STATUS_VALID_VALUE}'."
+
+        # Validation passed
+        print(f"Debug: Validation passed for OA_STATUS value '{value}'.")
+        return True, "", "Valid OA_STATUS value"
+
+    except Exception as e:
+        print(f"Error validating OA_STATUS value '{value}': {e}")
+        return False, "red", f"Error validating OA_STATUS value: {e}"
+
+# Allowed value for OA_OBJECT_TYPE
+OA_OBJECT_TYPE_VALID_VALUE = "RECORD"
+
+def validate_oa_object_type(value):
+    """
+    Validates the OA_OBJECT_TYPE column.
+
+    Parameters:
+    - value (str): The value to validate.
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and a validation message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating OA_OBJECT_TYPE value '{value}'")
+
+        # Ensure the value is not empty or NaN
+        if pd.isna(value) or str(value).strip() == "":
+            return False, "yellow", "OA_OBJECT_TYPE value is empty or missing."
+
+        value = str(value).strip()
+
+        if value != OA_OBJECT_TYPE_VALID_VALUE:
+            print(f"Debug: Invalid OA_OBJECT_TYPE value: '{value}'. Expected '{OA_OBJECT_TYPE_VALID_VALUE}'.")
+            return False, "red", f"Invalid OA_OBJECT_TYPE: '{value}'. Expected '{OA_OBJECT_TYPE_VALID_VALUE}'."
+
+        # Validation passed
+        print(f"Debug: Validation passed for OA_OBJECT_TYPE value '{value}'.")
+        return True, "", "Valid OA_OBJECT_TYPE value"
+
+    except Exception as e:
+        print(f"Error validating OA_OBJECT_TYPE value '{value}': {e}")
+        return False, "red", f"Error validating OA_OBJECT_TYPE value: {e}"
+    
+# Allowed value for OA_METADATA_SCHEMA
+OA_METADATA_SCHEMA_VALID_VALUE = "4"
+
+def validate_oa_metadata_schema(value):
+    """
+    Validates the OA_METADATA_SCHEMA column.
+
+    Parameters:
+    - value (str): The value to validate.
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and a validation message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating OA_METADATA_SCHEMA value '{value}'")
+
+        # Ensure the value is not empty or NaN
+        if pd.isna(value) or str(value).strip() == "":
+            return False, "yellow", "OA_METADATA_SCHEMA value is empty or missing."
+
+        value = str(value).strip()
+
+        if value != OA_METADATA_SCHEMA_VALID_VALUE:
+            print(f"Debug: Invalid OA_METADATA_SCHEMA value: '{value}'. Expected '{OA_METADATA_SCHEMA_VALID_VALUE}'.")
+            return False, "red", f"Invalid OA_METADATA_SCHEMA: '{value}'. Expected '{OA_METADATA_SCHEMA_VALID_VALUE}'."
+
+        # Validation passed
+        print(f"Debug: Validation passed for OA_METADATA_SCHEMA value '{value}'.")
+        return True, "", "Valid OA_METADATA_SCHEMA value"
+
+    except Exception as e:
+        print(f"Error validating OA_METADATA_SCHEMA value '{value}': {e}")
+        return False, "red", f"Error validating OA_METADATA_SCHEMA value: {e}"
+    
+
+# Allowed value for OA_FEATURED
+OA_FEATURED_VALID_VALUE = "0"
+
+def validate_oa_featured(value):
+    """
+    Validates the OA_FEATURED column.
+
+    Parameters:
+    - value (str): The value to validate.
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red'), and a validation message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating OA_FEATURED value '{value}'")
+
+        # Ensure the value is not empty or NaN
+        if pd.isna(value) or str(value).strip() == "":
+            return False, "yellow", "OA_FEATURED value is empty or missing."
+
+        value = str(value).strip()
+
+        if value != OA_FEATURED_VALID_VALUE:
+            print(f"Debug: Invalid OA_FEATURED value: '{value}'. Expected '{OA_FEATURED_VALID_VALUE}'.")
+            return False, "red", f"Invalid OA_FEATURED: '{value}'. Expected '{OA_FEATURED_VALID_VALUE}'."
+
+        # Validation passed
+        print(f"Debug: Validation passed for OA_FEATURED value '{value}'.")
+        return True, "", "Valid OA_FEATURED value"
+
+    except Exception as e:
+        print(f"Error validating OA_FEATURED value '{value}': {e}")
+        return False, "red", f"Error validating OA_FEATURED value: {e}"
 
 
 
@@ -868,19 +1719,460 @@ def verify_file(input_file, output_file):
             except Exception as e:
                 print(f"Error validating ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2}: {e}")
 
-        # Validate 'Other Places Mentioned' column
-        if "Other Places Mentioned" in df.columns:
-            value = row["Other Places Mentioned"]
+      # Validate 'OTHER_PLACES_MENTIONED' and 'ES..OTHER_PLACES_MENTIONED' columns
+        for col in ["OTHER_PLACES_MENTIONED", "ES..OTHER_PLACES_MENTIONED"]:
+            if col in df.columns:
+                # Debugging log to confirm the column exists and the verification is starting
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    # Use the validate function for city names
+                    is_valid, color, message = validate_other_places_mentioned(value, city_info)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                # Debugging log to confirm the column is not found
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+
+        # Validate 'EXTENT' and 'ES..EXTENT' columns
+        for col, lang in [("EXTENT", "english"), ("ES..EXTENT", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_extent(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+
+
+        # Validate 'PHYSICAL_DESCRIPTION' and 'ES..PHYSICAL_DESCRIPTION' columns
+        for col, lang in [("PHYSICAL_DESCRIPTION", "english"), ("ES..PHYSICAL_DESCRIPTION", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_physical_description(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'DIGITAL_PUBLISHER' and 'ES..DIGITAL_PUBLISHER' columns
+        for col, lang in [("DIGITAL_PUBLISHER", "english"), ("ES..DIGITAL_PUBLISHER", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_digital_publisher(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'SOURCE' and 'ES..SOURCE' columns
+        for col, lang in [("SOURCE", "english"), ("ES..SOURCE", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_source(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'UNIT' and 'ES..UNIT' columns
+        for col, lang in [("UNIT", "english"), ("ES..UNIT", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_unit(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+
+        # Validate 'LANGUAGE' and 'ES..LANGUAGE' columns
+        for col, lang in [("LANGUAGE", "english"), ("ES..LANGUAGE", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_language(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'FORMAT' and 'ES..FORMAT' columns
+        for col, lang in [("FORMAT", "english"), ("ES..FORMAT", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_format(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'TYPE' and 'ES..TYPE' columns
+        for col, lang in [("TYPE", "english"), ("ES..TYPE", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_type(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'MEDIUM_AAT' and 'ES..MEDIUM_AAT' columns
+        for col, lang in [("MEDIUM_AAT", "english"), ("ES..MEDIUM_AAT", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_medium(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'GENRE_AAT' and 'ES..GENRE_AAT' columns
+        for col, lang in [("GENRE_AAT", "english"), ("ES..GENRE_AAT", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_genre(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'ACCESS_RIGHTS' and 'ES..ACCESS_RIGHTS' columns
+        for col, lang in [("ACCESS_RIGHTS", "english"), ("ES..ACCESS_RIGHTS", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_access_rights(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'METADATA_CATALOGER' and 'ES..METADATA_CATALOGER' columns
+        for col in ["METADATA_CATALOGER", "ES..METADATA_CATALOGER"]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_metadata_cataloger(value)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'OA_DESCRIPTION' and 'ES..OA_DESCRIPTION' columns
+        for col, lang in [("OA_DESCRIPTION", "english"), ("ES..OA_DESCRIPTION", "spanish")]:
+            if col in df.columns:
+                print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
+
+                value = row[col]
+                # Skip validation if the cell is empty
+                if pd.isna(value) or str(value).strip() == "":
+                    print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
+                    continue
+
+                try:
+                    is_valid, color, message = validate_oa_description(value, lang)
+                    if is_valid:
+                        print(f"Validation successful: {col} at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc(col) + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                        print(f"Failed validation: {col} at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating {col} at row {idx + 2}: {e}")
+            else:
+                print(f"Debug: Column '{col}' not found in dataset.")
+
+        # Validate 'OA_COLLECTION' column
+        if "OA_COLLECTION" in df.columns:
+            print(f"Debug: Starting verification for 'OA_COLLECTION' column at row {idx + 2}")
+
+            value = row["OA_COLLECTION"]
             try:
-                is_valid, color, message = validate_other_places_mentioned(value, city_info)
+                is_valid, color, message = validate_oa_collection(value)
                 if is_valid:
-                    print(f"Validation successful: Other Places Mentioned at row {idx + 2}")
+                    print(f"Validation successful: OA_COLLECTION at row {idx + 2}")
                 else:
-                    col_idx = df.columns.get_loc("Other Places Mentioned") + 1
-                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
-                    print(f"Failed validation: Other Places Mentioned at row {idx + 2} - Reason: {message}")
+                    col_idx = df.columns.get_loc("OA_COLLECTION") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                    print(f"Failed validation: OA_COLLECTION at row {idx + 2} - Reason: {message}")
             except Exception as e:
-                print(f"Error validating Other Places Mentioned at row {idx + 2}: {e}")
+                print(f"Error validating OA_COLLECTION at row {idx + 2}: {e}")
+        else:
+            print("Debug: Column 'OA_COLLECTION' not found in dataset.")
+
+        # Validate 'OA_PROFILE' column
+        if "OA_PROFILE" in df.columns:
+            print(f"Debug: Starting verification for 'OA_PROFILE' column at row {idx + 2}")
+
+            value = row["OA_PROFILE"]
+            try:
+                is_valid, color, message = validate_oa_profile(value)
+                if is_valid:
+                    print(f"Validation successful: OA_PROFILE at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("OA_PROFILE") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                    print(f"Failed validation: OA_PROFILE at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating OA_PROFILE at row {idx + 2}: {e}")
+        else:
+            print("Debug: Column 'OA_PROFILE' not found in dataset.")
+
+        # Validate 'OA_STATUS' column
+        if "OA_STATUS" in df.columns:
+            print(f"Debug: Starting verification for 'OA_STATUS' column at row {idx + 2}")
+
+            value = row["OA_STATUS"]
+            try:
+                is_valid, color, message = validate_oa_status(value)
+                if is_valid:
+                    print(f"Validation successful: OA_STATUS at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("OA_STATUS") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                    print(f"Failed validation: OA_STATUS at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating OA_STATUS at row {idx + 2}: {e}")
+        else:
+            print("Debug: Column 'OA_STATUS' not found in dataset.")
+
+        # Validate 'OA_OBJECT_TYPE' column
+        if "OA_OBJECT_TYPE" in df.columns:
+            print(f"Debug: Starting verification for 'OA_OBJECT_TYPE' column at row {idx + 2}")
+
+            value = row["OA_OBJECT_TYPE"]
+            try:
+                is_valid, color, message = validate_oa_object_type(value)
+                if is_valid:
+                    print(f"Validation successful: OA_OBJECT_TYPE at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("OA_OBJECT_TYPE") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                    print(f"Failed validation: OA_OBJECT_TYPE at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating OA_OBJECT_TYPE at row {idx + 2}: {e}")
+        else:
+            print("Debug: Column 'OA_OBJECT_TYPE' not found in dataset.")
+
+        # Validate 'OA_METADATA_SCHEMA' column
+        if "OA_METADATA_SCHEMA" in df.columns:
+            print(f"Debug: Starting verification for 'OA_METADATA_SCHEMA' column at row {idx + 2}")
+
+            value = row["OA_METADATA_SCHEMA"]
+            try:
+                is_valid, color, message = validate_oa_metadata_schema(value)
+                if is_valid:
+                    print(f"Validation successful: OA_METADATA_SCHEMA at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("OA_METADATA_SCHEMA") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                    print(f"Failed validation: OA_METADATA_SCHEMA at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating OA_METADATA_SCHEMA at row {idx + 2}: {e}")
+        else:
+            print("Debug: Column 'OA_METADATA_SCHEMA' not found in dataset.")
+
+        # Validate 'OA_FEATURED' column
+        if "OA_FEATURED" in df.columns:
+            print(f"Debug: Starting verification for 'OA_FEATURED' column at row {idx + 2}")
+
+            value = row["OA_FEATURED"]
+            try:
+                is_valid, color, message = validate_oa_featured(value)
+                if is_valid:
+                    print(f"Validation successful: OA_FEATURED at row {idx + 2}")
+                else:
+                    col_idx = df.columns.get_loc("OA_FEATURED") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                    print(f"Failed validation: OA_FEATURED at row {idx + 2} - Reason: {message}")
+            except Exception as e:
+                print(f"Error validating OA_FEATURED at row {idx + 2}: {e}")
+        else:
+            print("Debug: Column 'OA_FEATURED' not found in dataset.")
+
+
+
+
 
         # Validate location-related columns
         for loc_col_name, location_func in location_validation_rules.items():
@@ -900,8 +2192,6 @@ def verify_file(input_file, output_file):
     # Save the workbook after validation and highlighting
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
-
-
 
 
 
