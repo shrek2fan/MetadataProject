@@ -20,9 +20,8 @@ args = parser.parse_args()
 file_name = args.file_name
 file_path = os.path.join(os.getcwd(), file_name)
 
-# Ensure the file exists in the directory
 if not os.path.exists(file_path):
-    raise FileNotFoundError(f"The file {file_name}xx does not exist in the current directory.")
+    raise FileNotFoundError(f"The file {file_name} does not exist in the current directory.")
 
 # Load spreadsheet with multiple sheets
 xls = pd.ExcelFile(file_path)
@@ -231,28 +230,41 @@ def ensure_series(col):
 import re
 from datetime import datetime
 
+def clean_dates(row):
+    """
+    Cleans and formats date-related information.
 
-def clean_dates(row, title_column, date_column, year_column):
-    title = row[title_column]
-    date_str = ''
-    year_str = ''
-    
+    Parameters:
+    - row (pd.Series): A single row from the DataFrame.
+
+    Returns:
+    - tuple: A tuple containing the cleaned DATE and YEAR values.
+    """
+    title = row.get('TITLE', '')  # Use ES..TITLE or TITLE
+    date_value = row.get('DATE', '')  # Use ES..DATE or DATE
+    year_value = row.get('YEAR', '')  # Use ES..YEAR or YEAR
+
+    date_str = date_value
+    year_str = year_value
+
     if isinstance(title, str):
-        # Match and extract date parts
         date_pattern = r'(\b\w+\b) (\d{1,2}), (\d{4})'
         match = re.search(date_pattern, title, re.IGNORECASE)
         if match:
             month, day, year = match.groups()
-            # Translate month and format date
             month_mapping = {
                 'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
                 'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
                 'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
             }
             month_number = month_mapping.get(month.lower(), '01')
-            date_str = f'{year}-{month_number}-{day.zfill(2)}'
+            date_str = f"{year}-{month_number}-{day.zfill(2)}"
             year_str = year
-    return date_str, year_str
+
+    return pd.Series([date_str, year_str])
+
+
+
 
 
 def safe_extract_year(date_value):
@@ -456,32 +468,43 @@ def clean_columns_in_sheets(xls, column_cleaning_rules):
         # Fill missing values and replace "no data" placeholders
         df = df.fillna('').replace('no data', '')
 
+       # Apply column-specific cleaning rules
+   
         # Apply column-specific cleaning rules
-        for column_name, cleaning_func in column_cleaning_rules.items():
-            if column_name in df.columns:
-                print(f"Applying cleaning to column: {column_name}")
-                if 'DATE' in column_name:
-                    # Handle DATE columns with row-wise operations
-                    df[[column_name, f"{column_name}_YEAR"]] = df.apply(lambda row: pd.Series(cleaning_func(row)), axis=1)
-                else:
-                    # Apply cleaning function column-wise
-                    df[column_name] = df[column_name].apply(cleaning_func)
+    
+    for column_name, cleaning_func in column_cleaning_rules.items():
+        if column_name in df.columns and 'DATE' in column_name:
+            # Ensure the YEAR column exists
+            year_column = f"{column_name}_YEAR"
+            if year_column not in df.columns:
+                df[year_column] = ""
 
-        # Add DIGITAL_IDENTIFIER transformation explicitly
+            # Apply the cleaning function to the entire row
+            df[[column_name, year_column]] = df.apply(
+                lambda row: pd.Series(cleaning_func(row)),
+                axis=1
+            )
+        else:
+            # Apply cleaning function column-wise for other columns
+            df[column_name] = df[column_name].apply(cleaning_func)
+
+
+
+            # Add DIGITAL_IDENTIFIER transformation explicitly
         for col_name in ["DIGITAL_IDENTIFIER", "ES..DIGITAL_IDENTIFIER"]:
-            if col_name in df.columns:
-                print(f"Cleaning column: {col_name}")
-                df[col_name] = clean_digital_identifier(df, col_name)
+                if col_name in df.columns:
+                    print(f"Cleaning column: {col_name}")
+                    df[col_name] = clean_digital_identifier(df, col_name)
 
 
-        # Reorder columns to match the original column order
-        df = df[original_columns]
+            # Reorder columns to match the original column order
+                df = df[original_columns]
 
-        # Fill constant values for specific columns
-        df = fill_constant_values(df)
+                        # Fill constant values for specific columns
+                df = fill_constant_values(df)
 
-        # Save the cleaned DataFrame into a global dictionary for later use
-        cleaned_sheets[sheet_name] = df
+                        # Save the cleaned DataFrame into a global dictionary for later use
+                cleaned_sheets[sheet_name] = df
 
 
 
