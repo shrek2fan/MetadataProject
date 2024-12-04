@@ -130,6 +130,9 @@ relationship_mapping_english = {
 }
 
 
+
+
+
 def validate_series(value, series_values):
     """
     Validates if a series value is in the approved list and has the correct format.
@@ -160,9 +163,11 @@ def validate_series(value, series_values):
     print(f"Debug: Series name '{cleaned_value}' not found in approved list. Highlighting in yellow.")
     return False, "yellow", "Series name not found in approved list"
 
+
+
 def validate_relationships(rel1_value, rel2_value, mapping, lang, column_name_rel1, column_name_rel2):
     """
-    Validates RELATIONSHIP 1 and RELATIONSHIP 2 columns, allowing multiple terms in RELATIONSHIP 1.
+    Validates RELATIONSHIP 1 and RELATIONSHIP 2 columns.
 
     Parameters:
     - rel1_value (str): The value in the RELATIONSHIP 1 column.
@@ -177,39 +182,31 @@ def validate_relationships(rel1_value, rel2_value, mapping, lang, column_name_re
       and an error message.
     """
     try:
-        rel1_cleaned = str(rel1_value).strip()
+        # Clean and strip values
+        rel1_cleaned = str(rel1_value).strip() if pd.notna(rel1_value) else ""
         rel2_cleaned = str(rel2_value).strip() if pd.notna(rel2_value) else ""
 
-        # Handle multiple terms in RELATIONSHIP 1
-        rel1_terms = [term.strip() for term in rel1_cleaned.split("[|]") if term.strip()]
+        # Skip validation for empty RELATIONSHIP 1 and RELATIONSHIP 2
+        if not rel1_cleaned and not rel2_cleaned:
+            return True, "", "No validation needed for empty relationships."
 
-        # Validate each term in RELATIONSHIP 1
-        invalid_terms = [term for term in rel1_terms if term not in mapping]
-        if invalid_terms:
-            return (
-                False,
-                "red",
-                f"Invalid {column_name_rel1} values: {', '.join(invalid_terms)} in {lang}",
-            )
+        # Validate RELATIONSHIP 1
+        if rel1_cleaned not in mapping:
+            return False, "red", f"Invalid {column_name_rel1} value: '{rel1_cleaned}' in {lang}"
 
-        # Retrieve valid RELATIONSHIP 2 values for all RELATIONSHIP 1 terms
-        valid_rel2 = set(
-            rel2 for term in rel1_terms for rel2 in mapping.get(term, [])
-        )
+        # Retrieve valid RELATIONSHIP 2 terms for the RELATIONSHIP 1 term
+        valid_rel2 = mapping[rel1_cleaned]
 
-        # If RELATIONSHIP 2 is provided, validate it
+        # Validate RELATIONSHIP 2, if provided
         if rel2_cleaned and rel2_cleaned not in valid_rel2:
-            return (
-                False,
-                "red",
-                f"Invalid {column_name_rel2} value: '{rel2_cleaned}' for {column_name_rel1}: '{rel1_cleaned}' in {lang}",
-            )
+            return False, "red", f"Invalid {column_name_rel2} value: '{rel2_cleaned}' for {column_name_rel1}: '{rel1_cleaned}' in {lang}"
 
-        # If RELATIONSHIP 2 is blank, it's valid
+        # If all checks pass
         return True, "", "Valid relationship values"
-
     except Exception as e:
         return False, "red", f"Error validating relationships in {lang}: {str(e)}"
+
+
 
 
 
@@ -423,6 +420,54 @@ def validate_collection_number(value):
         print(f"Failed validation: Collection number '{cleaned_value}' is invalid.")
         return False, "red", f"Invalid collection number: Expected one of {valid_values}, but got '{cleaned_value}'"
 
+
+
+def validate_full_folder_or_file_path(value, collection_identifier):
+    """
+    Validates the FullFolderOrFilePath column for proper structure and naming conventions.
+
+    Parameters:
+    - value (str): The full folder or file path to validate.
+    - collection_identifier (str): The collection identifier (e.g., 'Ms0004', 'Ms0071').
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
+    """
+    try:
+        # Debug log for the function call
+        print(f"Debug: Validating FullFolderOrFilePath value '{value}' with collection identifier '{collection_identifier}'")
+
+        if pd.isna(value) or str(value).strip() == "":
+            print("Debug: FullFolderOrFilePath value is empty or missing.")
+            return False, "yellow", "FullFolderOrFilePath is empty or missing."
+
+        # Define the standard pattern for the full folder/file path
+        standard_pattern = rf"^/Box_\d+/(\d+_\d+)/{collection_identifier}_\d+_\d+_\d+\.pdf$"
+        
+        # Define the alternate pattern for non-standard numbering
+        letter_suffix_pattern = rf"^/Box_\d+/(\d+_\d+)/{collection_identifier}_\d+_\d+_\d+[A-Z]\.pdf$"
+
+        # Check for valid standard format
+        if re.match(standard_pattern, value.strip()):
+            print("Debug: FullFolderOrFilePath value is valid.")
+            return True, "", "Valid FullFolderOrFilePath."
+
+        # Check for valid format but with non-standard numbering
+        if re.match(letter_suffix_pattern, value.strip()):
+            print("Debug: FullFolderOrFilePath value contains non-standard numbering.")
+            return False, "yellow", "Non-standard numbering in file name (e.g., '05A')."
+
+        # If it doesn't match any of the valid patterns
+        print("Debug: FullFolderOrFilePath value is invalid.")
+        return False, "red", f"Invalid FullFolderOrFilePath format: '{value}'"
+
+    except Exception as e:
+        print(f"Error validating FullFolderOrFilePath value '{value}': {e}")
+        return False, "red", f"Error validating FullFolderOrFilePath: {e}"
+
+
+
+
 def validate_other_places_mentioned(city, city_info):
     """
     Validates the 'Other Places Mentioned' column by checking city format and existence in the city list.
@@ -545,6 +590,9 @@ def validate_date_column(date_value, title_value):
         return False, "red", f"Date '{date_value}' does not match extracted date '{extracted_date}' from title."
 
     return True, "", "Date matches and is valid."
+
+
+
 
 def validate_year(year_value, date_value):
     """
@@ -1765,6 +1813,27 @@ def verify_file(input_file, output_file):
                     print(f"Failed validation: ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2} - Reason: {message}")
             except Exception as e:
                 print(f"Error validating ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2}: {e}")
+
+        if "FullFolderOrFilePath" in df.columns:
+            for idx, row in df.iterrows():
+                full_folder_value = row["FullFolderOrFilePath"]
+                digital_identifier = row.get("DIGITAL_IDENTIFIER", "")
+
+                # Extract collection identifier (e.g., 'Ms0004' or 'Ms0071') from DIGITAL_IDENTIFIER
+                collection_identifier = digital_identifier.split("_")[0] if "_" in digital_identifier else digital_identifier
+
+                try:
+                    is_valid, color, message = validate_full_folder_or_file_path(full_folder_value, collection_identifier)
+                    if is_valid:
+                        print(f"Validation successful: FullFolderOrFilePath at row {idx + 2}")
+                    else:
+                        col_idx = df.columns.get_loc("FullFolderOrFilePath") + 1
+                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                        print(f"Failed validation: FullFolderOrFilePath at row {idx + 2} - Reason: {message}")
+                except Exception as e:
+                    print(f"Error validating FullFolderOrFilePath at row {idx + 2}: {e}")
+
+
 
       # Validate 'OTHER_PLACES_MENTIONED' and 'ES..OTHER_PLACES_MENTIONED' columns
         for col in ["OTHER_PLACES_MENTIONED", "ES..OTHER_PLACES_MENTIONED"]:
