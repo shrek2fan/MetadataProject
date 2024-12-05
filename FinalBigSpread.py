@@ -167,7 +167,7 @@ def validate_series(value, series_values):
 
 def validate_relationships(rel1_value, rel2_value, mapping, lang, column_name_rel1, column_name_rel2):
     """
-    Validates RELATIONSHIP 1 and RELATIONSHIP 2 columns.
+    Validates RELATIONSHIP 1 and RELATIONSHIP 2 columns with support for multiple terms in RELATIONSHIP 1.
 
     Parameters:
     - rel1_value (str): The value in the RELATIONSHIP 1 column.
@@ -190,21 +190,33 @@ def validate_relationships(rel1_value, rel2_value, mapping, lang, column_name_re
         if not rel1_cleaned and not rel2_cleaned:
             return True, "", "No validation needed for empty relationships."
 
-        # Validate RELATIONSHIP 1
-        if rel1_cleaned not in mapping:
-            return False, "red", f"Invalid {column_name_rel1} value: '{rel1_cleaned}' in {lang}"
+        # Split RELATIONSHIP 1 terms if they are separated by [|]
+        rel1_terms = [term.strip() for term in rel1_cleaned.split("[|]")]
 
-        # Retrieve valid RELATIONSHIP 2 terms for the RELATIONSHIP 1 term
-        valid_rel2 = mapping[rel1_cleaned]
+        # Check for duplicates in RELATIONSHIP 1 terms
+        if len(rel1_terms) != len(set(rel1_terms)):
+            return False, "red", f"Duplicate terms found in {column_name_rel1}: '{rel1_cleaned}'"
+
+        # Validate each term in RELATIONSHIP 1
+        invalid_terms = [term for term in rel1_terms if term not in mapping]
+        if invalid_terms:
+            return False, "red", f"Invalid {column_name_rel1} terms: {', '.join(invalid_terms)} in {lang}"
 
         # Validate RELATIONSHIP 2, if provided
-        if rel2_cleaned and rel2_cleaned not in valid_rel2:
-            return False, "red", f"Invalid {column_name_rel2} value: '{rel2_cleaned}' for {column_name_rel1}: '{rel1_cleaned}' in {lang}"
+        if rel2_cleaned:
+            valid_rel2 = set()
+            for term in rel1_terms:
+                valid_rel2.update(mapping.get(term, set()))
+            if rel2_cleaned not in valid_rel2:
+                return False, "red", f"Invalid {column_name_rel2} value: '{rel2_cleaned}' for {column_name_rel1}: '{rel1_cleaned}' in {lang}"
 
         # If all checks pass
         return True, "", "Valid relationship values"
     except Exception as e:
         return False, "red", f"Error validating relationships in {lang}: {str(e)}"
+
+# Function updated. It now supports multiple terms in RELATIONSHIP1 and validates them against mapping. Let me know if further modifications are needed.
+
 
 
 
