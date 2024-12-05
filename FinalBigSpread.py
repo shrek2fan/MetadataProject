@@ -10,14 +10,6 @@ import sys
 
 
 
-# Add the PrintToLogger code block here
-# Redirect print statements to logging and console
-logging.basicConfig(
-    filename='validation_log.txt',
-    level=logging.DEBUG,
-    format='%(asctime)s - %(message)s'
-)
-
 class PrintToLogger:
     def __init__(self):
         self.console = sys.stdout
@@ -2324,15 +2316,52 @@ def verify_file(input_file, output_file):
 
 
 
-# Argument parser to take file input and generate verified output
 if __name__ == "__main__":
+    import logging
+
+    # Set up argument parser to take input file
     parser = argparse.ArgumentParser(description="Verify an Excel file against validation rules.")
     parser.add_argument("file_name", help="The name of the Excel file to verify")
     args = parser.parse_args()
-    
+
     # Generate output file name with "Verified_" prefix
     input_file = args.file_name
     output_file = f"Verified_{os.path.basename(input_file)}"
-    
-    # Run verification
+
+    # Dynamically set up logging for this specific file
+    log_file_name = f"{os.path.splitext(os.path.basename(input_file))[0]}_validation_log.txt"
+
+    # Clear existing handlers to avoid duplicating log entries
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    # Set up logging for the specific file
+    logging.basicConfig(
+        filename=log_file_name,
+        level=logging.DEBUG,
+        format="%(asctime)s - %(message)s",
+        filemode="w",  # Overwrite the log file for each run
+    )
+
+    # Reassign `sys.stdout` to log all print statements to the file-specific log
+    class PrintToLogger:
+        def __init__(self):
+            self.console = sys.stdout
+
+        def write(self, message):
+            if message.strip():  # Avoid empty log entries
+                logging.info(message.strip())
+            self.console.write(message)
+
+        def flush(self):
+            pass  # Required for Python's `sys.stdout`
+
+    sys.stdout = PrintToLogger()
+
+    # Run verification for the input file
     verify_file(input_file, output_file)
+
+    # Notify user of the output
+    print(f"Validation log written to: {log_file_name}")
+    print(f"Verified file written to: {output_file}")
+
