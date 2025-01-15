@@ -8,8 +8,6 @@ import datetime
 import logging
 import sys
 
-
-
 class PrintToLogger:
     def __init__(self):
         self.console = sys.stdout
@@ -24,8 +22,6 @@ class PrintToLogger:
 
 sys.stdout = PrintToLogger()
 
-
-
 # Define fill styles for highlighting mistakes
 highlight_fill_red = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
 highlight_fill_yellow = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
@@ -39,7 +35,6 @@ def load_approved_subjects(vocabulary_file):
     }
     print("Debug: Approved subjects loaded:", approved_subjects)  # Log loaded terms for confirmation
     return approved_subjects
-
 
 # Load the city dataset into a dictionary structure with safe handling for non-string values
 def load_city_data(city_dataset_path):
@@ -61,7 +56,6 @@ def load_city_data(city_dataset_path):
             'coordinates': safe_strip(row["CITIES' LAT_LONG COORDINATES"])
         }
     return city_info
-
 
 # List of valid series names
 series_values = [
@@ -99,8 +93,6 @@ relationship_mapping = {
     "Socios Comerciales": { " Abogado y Cliente", "Propietario y Prospecto", "Vendedor y Cliente", "Médico y Paciente", "Propietario e Inquilino "}
 }
 
-
-
 # English translation for RELATIONSHIP 1 and RELATIONSHIP 2
 relationship_mapping_english = {
     "Family": {
@@ -120,10 +112,6 @@ relationship_mapping_english = {
     "Catholic Church and Churchgoers": { "Chaplain and Churchgoer" },
     "Business Partners": { "Lawyer and Client", "Proprietor and Prospect", "Seller and Client",  "Doctor and Patient", "Landlord and Tenant" }
 }
-
-
-
-
 
 def validate_series(value, series_values):
     """
@@ -154,8 +142,6 @@ def validate_series(value, series_values):
     # If no match is found, highlight in yellow
     print(f"Debug: Series name '{cleaned_value}' not found in approved list. Highlighting in yellow.")
     return False, "yellow", "Series name not found in approved list"
-
-
 
 def validate_relationships(rel1_value, rel2_value, mapping, lang, column_name_rel1, column_name_rel2):
     """
@@ -208,12 +194,6 @@ def validate_relationships(rel1_value, rel2_value, mapping, lang, column_name_re
         return False, "red", f"Error validating relationships in {lang}: {str(e)}"
 
 # Function updated. It now supports multiple terms in RELATIONSHIP1 and validates them against mapping. Let me know if further modifications are needed.
-
-
-
-
-
-
 
 def validate_box_folder(value, digital_identifier):
     """
@@ -274,8 +254,6 @@ def validate_collection_name(value, language="English"):
     else:
         return False, "red", f"Collection Name mismatch. Expected '{expected_value}', got '{value.strip()}'"
 
-
-
 def is_valid_city_related(row, city_column, country_column, state_column, coord_column, language):
     city = str(row.get(city_column, '')).strip().lower() if pd.notna(row.get(city_column)) else ''
     country = row.get(country_column, '').strip() if pd.notna(row.get(country_column)) else ''
@@ -313,9 +291,6 @@ def is_valid_city_related(row, city_column, country_column, state_column, coord_
     print("Debug: Location data matches expected values; validation passed.")
     return True, "", "", "Location data matches expected values"
 
-
-
-
 # Adjust location validation rules to include the language parameter
 location_validation_rules = {
     "SENDERS_CITY": lambda row: is_valid_city_related(row, 'SENDERS_CITY', 'SENDERS_COUNTRY', 'SENDERS_STATE', 'GEOLOC_SCITY', 'english'),
@@ -323,9 +298,6 @@ location_validation_rules = {
     "ADDRESSEES_CITY": lambda row: is_valid_city_related(row, 'ADDRESSEES_CITY', 'ADDRESSEES_COUNTRY', 'ADDRESSEES_STATE', 'GEOLOC_SCITY', 'english'),
     "ES..ADDRESSEES_CITY": lambda row: is_valid_city_related(row, 'ES..ADDRESSEES_CITY', 'ES..ADDRESSEES_COUNTRY', 'ES..ADDRESSEES_STATE', 'ES..GEOLOC_SCITY', 'spanish')
 }
-
-
-
 
 def validate_digital_identifier(value, previous_identifier=None):
     """
@@ -377,17 +349,12 @@ def validate_digital_identifier(value, previous_identifier=None):
     # If all checks pass, update previous identifier tracking and mark as valid
     return True, (collection, box_number, folder_number, current_letter_number), "Valid"
 
-
-
 def is_valid_box_folder(value):
     if not isinstance(value, str):
         return False, None, "Box Folder value is not a string"
     if not re.match(r'^\d{2}_\d{2}$', value):
         return False, None, "Box Folder format is incorrect, expected 'XX_XX' with two digits before and after the underscore"
     return True, None, "Valid"
-
-
-
 
 def is_valid_collection_name(value, language="English"):
     if not isinstance(value, str):
@@ -398,7 +365,6 @@ def is_valid_collection_name(value, language="English"):
         return False, None, f"Collection Name does not match expected value for {language}. Expected '{expected_name}' but got '{value}'"
     
     return True, None, "Valid"
-
 
 def validate_collection_number(value):
     """
@@ -425,7 +391,6 @@ def validate_collection_number(value):
         return False, "red", f"Invalid collection number: Expected one of {valid_values}, but got '{cleaned_value}'"
 
 
-
 def validate_full_folder_or_file_path(value, collection_identifier):
     """
     Validates the FullFolderOrFilePath column for proper structure and naming conventions.
@@ -438,37 +403,25 @@ def validate_full_folder_or_file_path(value, collection_identifier):
     - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
     """
     try:
-        # Debug log for the function call
-        print(f"Debug: Validating FullFolderOrFilePath value '{value}' with collection identifier '{collection_identifier}'")
-
         if pd.isna(value) or str(value).strip() == "":
-            print("Debug: FullFolderOrFilePath value is empty or missing.")
             return False, "yellow", "FullFolderOrFilePath is empty or missing."
 
-        # Define the standard pattern for the full folder/file path
+        # Define patterns for valid formats
         standard_pattern = rf"^/Box_\d+/(\d+_\d+)/{collection_identifier}_\d+_\d+_\d+\.pdf$"
-        
-        # Define the alternate pattern for non-standard numbering
         letter_suffix_pattern = rf"^/Box_\d+/(\d+_\d+)/{collection_identifier}_\d+_\d+_\d+[A-Z]\.pdf$"
 
-        # Check for valid standard format
+        # Validate against standard format
         if re.match(standard_pattern, value.strip()):
-            print("Debug: FullFolderOrFilePath value is valid.")
             return True, "", "Valid FullFolderOrFilePath."
 
-        # Check for valid format but with non-standard numbering
+        # Validate against alternate format
         if re.match(letter_suffix_pattern, value.strip()):
-            print("Debug: FullFolderOrFilePath value contains non-standard numbering.")
             return False, "yellow", "Non-standard numbering in file name (e.g., '05A')."
 
-        # If it doesn't match any of the valid patterns
-        print("Debug: FullFolderOrFilePath value is invalid.")
+        # Invalid format
         return False, "red", f"Invalid FullFolderOrFilePath format: '{value}'"
-
     except Exception as e:
-        print(f"Error validating FullFolderOrFilePath value '{value}': {e}")
         return False, "red", f"Error validating FullFolderOrFilePath: {e}"
-
 
 
 
@@ -484,10 +437,9 @@ def validate_other_places_mentioned(city, city_info):
     - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
     """
     try:
-        # Debugging log
         print(f"Debug: Starting validation for 'Other Places Mentioned' with value: '{city}'")
 
-        # Clean and validate the city value
+        # Clean input
         cleaned_city = str(city).strip()
         print(f"Debug: Cleaned city value: '{cleaned_city}'")
 
@@ -496,35 +448,33 @@ def validate_other_places_mentioned(city, city_info):
         invalid_format = []
         not_found = []
 
+        # Improved regex to handle multi-word cities and optional parentheses
+        city_regex = re.compile(r"^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+(?:\s\([A-Za-zÁÉÍÓÚáéíóúñÑ\s,]+\))?$")
+
         for city in cities:
             city = city.strip()
-            # Validate the format (e.g., "CityName (StateAbbr.)")
-            if not re.match(r"^[A-Za-z\s]+ \([A-Za-z]+\.\)$", city):
+
+            # Check format
+            if not city_regex.match(city):
                 invalid_format.append(city)
                 continue
 
-            # Validate if the city exists in the dataset
-            city_key = (city.lower(), 'english')  # Assuming English for simplicity; adjust as needed
-            if city_key not in city_info:
+            # Check existence in the dataset (case-sensitive for accents)
+            if city not in city_info:
                 not_found.append(city)
 
-        # Return appropriate validation result
+        # Handle validation results
         if invalid_format:
             return False, "red", f"Invalid city format(s): {', '.join(invalid_format)}"
         if not_found:
             return False, "yellow", f"City(s) not found in the approved city list: {', '.join(not_found)}"
 
-        # If everything is valid
         print(f"Debug: Validation passed for cities '{cleaned_city}' in Other Places Mentioned.")
         return True, "", "Valid city names"
 
     except Exception as e:
-        # Debugging log for any unexpected errors
         print(f"Error validating 'Other Places Mentioned' with value '{city}': {e}")
         return False, "red", f"Error validating city: {e}"
-
-
-
 
 
 def is_valid_date(value):
@@ -540,7 +490,6 @@ def is_valid_date(value):
         return True, None, "Valid"
     except (ValueError, TypeError):
         return False, None, "Date format is invalid. Expected 'YYYY-MM-DD' or 'YYYY-MM'"
-
 
 def extract_date_from_title(title):
     """
@@ -595,12 +544,9 @@ def validate_date_column(date_value, title_value):
 
     return True, "", "Date matches and is valid."
 
-
-
-
 def validate_year(year_value, date_value):
     """
-    Validates the YEAR and ES..YEAR columns.
+    Validates the YEAR and ES..YEAR columns, ensuring they are stored as text and match the expected format.
 
     Parameters:
     - year_value (str): The value in the YEAR or ES..YEAR column.
@@ -611,18 +557,22 @@ def validate_year(year_value, date_value):
       and an error message.
     """
     try:
-        # Ensure year_value is a 4-digit number
+        # Ensure year_value is treated as a string and strip any floating point `.0`
+        year_value = str(year_value).strip()
+        if year_value.endswith(".0"):
+            year_value = year_value[:-2]  # Remove trailing '.0'
+
+        # Validate year format (must be 4 digits)
         if not year_value.isdigit() or len(year_value) != 4:
-            return False, "red", f"Invalid year format: {year_value}"
+            return False, "red", f"Invalid year format: '{year_value}' (expected 4-digit text)"
 
-        # Extract the year from the date_value
-        date_year = date_value.split("-")[0] if "-" in date_value else None
+        # Extract the year from the date_value if provided
+        date_year = None
+        if isinstance(date_value, str) and "-" in date_value:
+            date_year = date_value.split("-")[0].strip()
 
-        if not date_year:
-            return False, "red", f"Invalid date format: {date_value}"
-
-        # Ensure the year matches the year from the date
-        if year_value != date_year:
+        # Compare year_value to date_year
+        if date_year and year_value != date_year:
             return False, "yellow", f"Year '{year_value}' does not match date year '{date_year}'"
 
         return True, "", "Year validation passed"
@@ -638,8 +588,6 @@ def is_valid_year(value):
     if not (1000 <= value <= 9999):
         return False, None, "Year is out of valid range (1000-9999)"
     return True, None, "Valid"
-
-
 
 def validate_name_field(value, authorized_names):
     """
@@ -686,7 +634,6 @@ def validate_name_field(value, authorized_names):
     # Name does not exist in the authorized names dataset at all
     print(f"Debug: '{cleaned_value}' not found in authorized names dataset.")
     return False, "yellow", "Name not found in dataset"
-
 
 def is_valid_subject_lcsh(value, approved_subjects, language="english"):
     if not isinstance(value, str):
@@ -761,7 +708,6 @@ def validate_extent(value, language):
         print(f"Error validating EXTENT value '{value}': {e}")
         return False, "red", f"Error validating EXTENT value: {e}"
 
-
 # Allowed values for PHYSICAL_DESCRIPTION and ES..PHYSICAL_DESCRIPTION columns
 PHYSICAL_DESCRIPTION_VALUES = {
     "de tinta azul": "blue ink",
@@ -794,7 +740,6 @@ PHYSICAL_DESCRIPTION_VALUES = {
     "sobre": "envelope",
     "tejido": "cloth"
 }
-
 
 def validate_physical_description(value, language):
     """
@@ -843,11 +788,9 @@ def validate_physical_description(value, language):
         print(f"Error validating PHYSICAL_DESCRIPTION value '{value}': {e}")
         return False, "red", f"Error validating PHYSICAL_DESCRIPTION value: {e}"
 
-
 # Allowed values for DIGITAL_PUBLISHER and ES..DIGITAL_PUBLISHER
 DIGITAL_PUBLISHER_ENGLISH = "New Mexico State University Library"
 DIGITAL_PUBLISHER_SPANISH = "Biblioteca de la Universidad Estatal de Nuevo México"
-
 
 def validate_digital_publisher(value, language):
     """
@@ -884,7 +827,6 @@ def validate_digital_publisher(value, language):
         print(f"Error validating DIGITAL_PUBLISHER value '{value}': {e}")
         return False, "red", f"Error validating DIGITAL_PUBLISHER value: {e}"
     
-
 
     # Allowed values for SOURCE and ES..SOURCE
 SOURCE_ENGLISH = "NMSU Library Archives and Special Collections"
@@ -925,11 +867,9 @@ def validate_source(value, language):
         print(f"Error validating SOURCE value '{value}': {e}")
         return False, "red", f"Error validating SOURCE value: {e}"
 
-
 # Allowed values for UNIT and ES..UNIT
 UNIT_ENGLISH = "Rio Grande Historical Collections"
 UNIT_SPANISH = "Colecciones históricas de Río Grande"
-
 
 def validate_unit(value, language):
     """
@@ -966,11 +906,9 @@ def validate_unit(value, language):
         print(f"Error validating UNIT value '{value}': {e}")
         return False, "red", f"Error validating UNIT value: {e}"
 
-
 # Allowed languages for LANGUAGE and ES..LANGUAGE columns
 VALID_LANGUAGES_ENGLISH = {"English", "Spanish", "French", "Japanese"}
 VALID_LANGUAGES_SPANISH = {"Inglés", "Español", "Francés", "Japonés"}
-
 
 def validate_language(value, language):
     """
@@ -1013,7 +951,6 @@ def validate_language(value, language):
         print(f"Error validating LANGUAGE value '{value}': {e}")
         return False, "red", f"Error validating LANGUAGE value: {e}"
 
-
 # Allowed values for FORMAT and ES..FORMAT
 FORMAT_ENGLISH = "application/pdf"
 FORMAT_SPANISH = "la aplicación/pdf"
@@ -1052,7 +989,6 @@ def validate_format(value, language):
     except Exception as e:
         print(f"Error validating FORMAT value '{value}': {e}")
         return False, "red", f"Error validating FORMAT value: {e}"
-
 
 # Allowed values for TYPE and ES..TYPE
 TYPE_ENGLISH = "Text"
@@ -1093,8 +1029,6 @@ def validate_type(value, language):
         print(f"Error validating TYPE value '{value}': {e}")
         return False, "red", f"Error validating TYPE value: {e}"
 
-
-
 # Allowed values for MEDIUM_AAT and ES..MEDIUM_AAT
 MEDIUM_ENGLISH = {
     "correspondence artifacts",
@@ -1108,7 +1042,6 @@ MEDIUM_SPANISH = {
     "correspondencia comercial",
     "correspondencia legal"
 }
-
 
 def validate_medium(value, language):
     """
@@ -1182,17 +1115,16 @@ GENRE_VALUES = {
     "receipts (financial records)": "recibo (carta de pago)"
 }
 
-
 def validate_genre(value, language):
     """
     Validates the GENRE_AAT and ES..GENRE_AAT columns.
 
     Parameters:
-    - value (str): The value to validate.
+    - value (str): The value to validate. Multiple values separated by '[|]'.
     - language (str): The language of the column ('english' or 'spanish').
 
     Returns:
-    - (bool, str, str): Validation status, highlight color ('red'), and message.
+    - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
     """
     try:
         # Debug log for the function call
@@ -1202,20 +1134,28 @@ def validate_genre(value, language):
             print("Debug: GENRE value is empty or missing.")
             return False, "yellow", "Genre value is empty or missing."
 
-        value = value.strip()
+        # Define valid genres based on language
         valid_values = GENRE_VALUES.keys() if language == "english" else GENRE_VALUES.values()
 
-        if value not in valid_values:
-            print(f"Debug: Invalid {language.upper()} GENRE value: '{value}'")
-            return False, "red", f"Invalid genre: '{value}'. Expected one of {list(valid_values)}"
+        # Split multiple values using '[|]'
+        genres = [v.strip() for v in value.split('[|]')]
+
+        # Check each genre individually
+        invalid_genres = [genre for genre in genres if genre not in valid_values]
+
+        if invalid_genres:
+            print(f"Debug: Invalid {language.upper()} GENRE values: {invalid_genres}")
+            return False, "red", f"Invalid genre(s): {', '.join(invalid_genres)}"
 
         # If all checks pass
-        print(f"Debug: Validation passed for GENRE value '{value}'.")
-        return True, "", "Valid GENRE value"
+        print(f"Debug: Validation passed for GENRE values '{value}'.")
+        return True, "", "Valid GENRE value(s)"
 
     except Exception as e:
         print(f"Error validating GENRE value '{value}': {e}")
         return False, "red", f"Error validating GENRE value: {e}"
+
+
     
 
 # Allowed values for ACCESS_RIGHTS and ES..ACCESS_RIGHTS
@@ -1256,7 +1196,6 @@ def validate_access_rights(value, language):
         print(f"Error validating ACCESS_RIGHTS value '{value}': {e}")
         return False, "red", f"Error validating ACCESS_RIGHTS value: {e}"
 
-
 def validate_metadata_cataloger(value):
     """
     Validates the METADATA_CATALOGER and ES..METADATA_CATALOGER columns.
@@ -1289,11 +1228,9 @@ def validate_metadata_cataloger(value):
         print(f"Error validating METADATA_CATALOGER value '{value}': {e}")
         return False, "red", f"Error validating METADATA_CATALOGER value: {e}"
 
-
 # Allowed values for OA_DESCRIPTION and ES..OA_DESCRIPTION
 OA_DESCRIPTION_ENGLISH = "This collection is available in both, English and Spanish"
 OA_DESCRIPTION_SPANISH = "Esta colección está disponible en inglés y español"
-
 
 def validate_oa_description(value, language):
     """
@@ -1398,7 +1335,6 @@ def validate_oa_profile(value):
     except Exception as e:
         print(f"Error validating OA_PROFILE value '{value}': {e}")
         return False, "red", f"Error validating OA_PROFILE value: {e}"
-
 
 # Allowed value for OA_STATUS
 OA_STATUS_VALID_VALUE = "PUBLISH"
@@ -1541,8 +1477,6 @@ def validate_oa_featured(value):
         print(f"Error validating OA_FEATURED value '{value}': {e}")
         return False, "red", f"Error validating OA_FEATURED value: {e}"
 
-
-
 def load_authorized_names(names_dataset_path):
     names_data = pd.read_excel(names_dataset_path, usecols=[0], header=None)
     authorized_names = set(names_data[0].dropna().str.strip())
@@ -1557,19 +1491,13 @@ column_validation_rules = {
     "ES..BOX_FOLDER": is_valid_box_folder,
     "COLLECTION_NAME": lambda x: is_valid_collection_name(x, language="English"),
     "ES..COLLECTION_NAME": lambda x: is_valid_collection_name(x, language="Spanish"),
-    "DATE": is_valid_date,
-    "ES..DATE": is_valid_date,
-    "YEAR": is_valid_year,
-    "ES..YEAR": is_valid_year,
     "SUBJECT_LCSH": lambda x: is_valid_subject_lcsh(x, approved_subjects, language="english"),
     "ES..SUBJECT_LCSH" : lambda x: is_valid_subject_lcsh(x, approved_subjects, language="spanish"),
     "FROM": lambda x: validate_name_field(x, authorized_names),
     "ES..FROM": lambda x: validate_name_field(x, authorized_names),
     "TO": lambda x: validate_name_field(x, authorized_names),
     "ES..TO": lambda x: validate_name_field(x, authorized_names),
-    # Add validation rules to the main column validation structure
-    "SERIES" : validate_series,
-    "ES..SERIES" : validate_series
+
 }
 
 location_validation_rules = {
@@ -1578,8 +1506,6 @@ location_validation_rules = {
     "ADDRESSEES_CITY": lambda row: is_valid_city_related(row, 'ADDRESSEES_CITY', 'ADDRESSEES_COUNTRY', 'ADDRESSEES_STATE', 'GEOLOC_SCITY', 'english'),
     "ES..ADDRESSEES_CITY": lambda row: is_valid_city_related(row, 'ES..ADDRESSEES_CITY', 'ES..ADDRESSEES_COUNTRY', 'ES..ADDRESSEES_STATE', 'ES..GEOLOC_SCITY', 'spanish')
 }
-
-
 
 approved_subjects = load_approved_subjects("SUBJECT_LCSH.xlsx")
 city_info = load_city_data("Maybeee.xlsx")
@@ -1753,35 +1679,50 @@ def verify_file(input_file, output_file):
             except Exception as e:
                 print(f"Error validating ES..DATE at row {idx + 2}: {e}")
 
-        # Validate YEAR column
+       # Validate YEAR column
         if "YEAR" in df.columns and "DATE" in df.columns:
-            year_value = row["YEAR"]
-            date_value = row["DATE"]
+            year_value = str(row["YEAR"]).strip()  # Convert to string and strip whitespace
+            date_value = str(row["DATE"]).strip()  # Ensure DATE is also treated as text
+            print(f"Debug: Validating YEAR - Row {idx + 2}, Original YEAR='{year_value}', DATE='{date_value}'")
             try:
-                is_valid, color, message = validate_year(str(year_value), str(date_value))
+                is_valid, color, message = validate_year(year_value, date_value)
+                print(f"Debug: YEAR validation result - is_valid={is_valid}, color={color}, message='{message}'")
                 if is_valid:
                     print(f"Validation successful: YEAR at row {idx + 2}")
                 else:
                     col_idx = df.columns.get_loc("YEAR") + 1
-                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    # Apply highlight only for failed validations
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
                     print(f"Failed validation: YEAR at row {idx + 2} - Reason: {message}")
             except Exception as e:
                 print(f"Error validating YEAR at row {idx + 2}: {e}")
 
+
+
+
+
         # Validate ES..YEAR column
         if "ES..YEAR" in df.columns and "ES..DATE" in df.columns:
-            year_value = row["ES..YEAR"]
-            date_value = row["ES..DATE"]
+            year_value = str(row["ES..YEAR"]).strip()  # Convert to string and strip whitespace
+            date_value = str(row["ES..DATE"]).strip()  # Ensure ES..DATE is also treated as text
+            print(f"Debug: Validating ES..YEAR - Row {idx + 2}, Original ES..YEAR='{year_value}', ES..DATE='{date_value}'")
             try:
-                is_valid, color, message = validate_year(str(year_value), str(date_value))
+                is_valid, color, message = validate_year(year_value, date_value)
+                print(f"Debug: ES..YEAR validation result - is_valid={is_valid}, color={color}, message='{message}'")
                 if is_valid:
                     print(f"Validation successful: ES..YEAR at row {idx + 2}")
                 else:
                     col_idx = df.columns.get_loc("ES..YEAR") + 1
-                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
+                    # Apply highlight only for failed validations
+                    ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
                     print(f"Failed validation: ES..YEAR at row {idx + 2} - Reason: {message}")
             except Exception as e:
                 print(f"Error validating ES..YEAR at row {idx + 2}: {e}")
+
+
+
+
+
 
         # Validate RELATIONSHIP columns
         if "RELATIONSHIP1" in df.columns and "RELATIONSHIP2" in df.columns:
@@ -1819,24 +1760,25 @@ def verify_file(input_file, output_file):
                 print(f"Error validating ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2}: {e}")
 
         if "FullFolderOrFilePath" in df.columns:
-            for idx, row in df.iterrows():
-                full_folder_value = row["FullFolderOrFilePath"]
-                digital_identifier = row.get("DIGITAL_IDENTIFIER", "")
+            full_folder_value = row["FullFolderOrFilePath"]
+            digital_identifier = row.get("DIGITAL_IDENTIFIER", "")
 
-                # Extract collection identifier (e.g., 'Ms0004' or 'Ms0071') from DIGITAL_IDENTIFIER
-                collection_identifier = digital_identifier.split("_")[0] if "_" in digital_identifier else digital_identifier
+            collection_identifier = (
+                digital_identifier.split("_")[0] if "_" in digital_identifier else digital_identifier
+            )
 
-                try:
-                    is_valid, color, message = validate_full_folder_or_file_path(full_folder_value, collection_identifier)
-                    if is_valid:
-                        print(f"Validation successful: FullFolderOrFilePath at row {idx + 2}")
-                    else:
-                        col_idx = df.columns.get_loc("FullFolderOrFilePath") + 1
-                        ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red if color == "red" else highlight_fill_yellow
-                        print(f"Failed validation: FullFolderOrFilePath at row {idx + 2} - Reason: {message}")
-                except Exception as e:
-                    print(f"Error validating FullFolderOrFilePath at row {idx + 2}: {e}")
-
+            try:
+                is_valid, color, message = validate_full_folder_or_file_path(full_folder_value, collection_identifier)
+                if not is_valid:
+                    col_idx = df.columns.get_loc("FullFolderOrFilePath") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = (
+                        highlight_fill_red if color == "red" else highlight_fill_yellow
+                    )
+                    print(f"Failed validation: FullFolderOrFilePath at row {idx + 2} - Reason: {message}")
+                else:
+                    print(f"Validation successful: FullFolderOrFilePath at row {idx + 2}")
+            except Exception as e:
+                print(f"Error validating FullFolderOrFilePath at row {idx + 2}: {e}")
 
 
       # Validate 'OTHER_PLACES_MENTIONED' and 'ES..OTHER_PLACES_MENTIONED' columns
@@ -1866,7 +1808,6 @@ def verify_file(input_file, output_file):
                 # Debugging log to confirm the column is not found
                 print(f"Debug: Column '{col}' not found in dataset.")
 
-
         # Validate 'EXTENT' and 'ES..EXTENT' columns
         for col, lang in [("EXTENT", "english"), ("ES..EXTENT", "spanish")]:
             if col in df.columns:
@@ -1890,8 +1831,6 @@ def verify_file(input_file, output_file):
                     print(f"Error validating {col} at row {idx + 2}: {e}")
             else:
                 print(f"Debug: Column '{col}' not found in dataset.")
-
-
 
         # Validate 'PHYSICAL_DESCRIPTION' and 'ES..PHYSICAL_DESCRIPTION' columns
         for col, lang in [("PHYSICAL_DESCRIPTION", "english"), ("ES..PHYSICAL_DESCRIPTION", "spanish")]:
@@ -1988,7 +1927,6 @@ def verify_file(input_file, output_file):
                     print(f"Error validating {col} at row {idx + 2}: {e}")
             else:
                 print(f"Debug: Column '{col}' not found in dataset.")
-
 
         # Validate 'LANGUAGE' and 'ES..LANGUAGE' columns
         for col, lang in [("LANGUAGE", "english"), ("ES..LANGUAGE", "spanish")]:
@@ -2290,10 +2228,6 @@ def verify_file(input_file, output_file):
         else:
             print("Debug: Column 'OA_FEATURED' not found in dataset.")
 
-
-
-
-
         # Validate location-related columns
         for loc_col_name, location_func in location_validation_rules.items():
             if loc_col_name in df.columns:
@@ -2312,9 +2246,6 @@ def verify_file(input_file, output_file):
     # Save the workbook after validation and highlighting
     wb.save(output_file)
     print(f"Verification completed. Output saved as {output_file}")
-
-
-
 
 if __name__ == "__main__":
     import logging
