@@ -427,7 +427,7 @@ def validate_full_folder_or_file_path(value, collection_identifier):
 
 def validate_other_places_mentioned(city, city_info):
     """
-    Validates the 'Other Places Mentioned' column by checking city format and existence in the city list.
+    Validates the 'Other Places Mentioned' column by checking if the value exists anywhere in the dataset.
 
     Parameters:
     - city (str): City name(s) from the column, separated by '[|]'.
@@ -443,38 +443,32 @@ def validate_other_places_mentioned(city, city_info):
         cleaned_city = str(city).strip()
         print(f"Debug: Cleaned city value: '{cleaned_city}'")
 
-        # Split multiple cities using the separator
-        cities = cleaned_city.split('[|]')
-        invalid_format = []
+        # Split multiple entries using the separator '[|]'
+        entries = cleaned_city.split('[|]')
         not_found = []
 
-        # Improved regex to handle multi-word cities and optional parentheses
-        city_regex = re.compile(r"^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+(?:\s\([A-Za-zÁÉÍÓÚáéíóúñÑ\s,]+\))?$")
+        # Flatten the dataset into a set of all possible values for quick lookup
+        all_valid_values = set()
+        for key, value in city_info.items():
+            all_valid_values.update(value.values())  # Combine all values in city_info into one set
 
-        for city in cities:
-            city = city.strip()
+        for entry in entries:
+            entry = entry.strip()
 
-            # Check format
-            if not city_regex.match(city):
-                invalid_format.append(city)
-                continue
-
-            # Check existence in the dataset (case-sensitive for accents)
-            if city not in city_info:
-                not_found.append(city)
+            # Check if the value exists anywhere in the dataset
+            if entry not in all_valid_values:
+                not_found.append(entry)
 
         # Handle validation results
-        if invalid_format:
-            return False, "red", f"Invalid city format(s): {', '.join(invalid_format)}"
         if not_found:
-            return False, "yellow", f"City(s) not found in the approved city list: {', '.join(not_found)}"
+            return False, "yellow", f"Value(s) not found in the dataset: {', '.join(not_found)}"
 
-        print(f"Debug: Validation passed for cities '{cleaned_city}' in Other Places Mentioned.")
-        return True, "", "Valid city names"
+        print(f"Debug: Validation passed for values '{cleaned_city}' in Other Places Mentioned.")
+        return True, "", "Valid values"
 
     except Exception as e:
         print(f"Error validating 'Other Places Mentioned' with value '{city}': {e}")
-        return False, "red", f"Error validating city: {e}"
+        return False, "red", f"Error validating value: {e}"
 
 
 def is_valid_date(value):
