@@ -57,6 +57,34 @@ def load_city_data(city_dataset_path):
         }
     return city_info
 
+
+def load_other_places(city_dataset_path):
+    """
+    Loads a dictionary with all unique city names from the dataset.
+
+    Parameters:
+    - city_dataset_path (str): Path to the city dataset.
+
+    Returns:
+    - set: A set of all unique city names from both English and Spanish columns.
+    """
+    city_data = pd.read_excel(city_dataset_path)
+
+    def safe_strip(value):
+        return str(value).strip() if isinstance(value, str) else ''
+
+    # Create a set for unique city names
+    other_places_info = set()
+
+    for _, row in city_data.iterrows():
+        other_places_info.add(safe_strip(row['ES_City']))
+        other_places_info.add(safe_strip(row['EN_City']))
+
+    # Remove empty entries if any
+    other_places_info.discard('')
+
+    return other_places_info
+
 # List of valid series names
 series_values = [
     'Martin Amador, 1856-1904',
@@ -425,13 +453,13 @@ def validate_full_folder_or_file_path(value, collection_identifier):
 
 
 
-def validate_other_places_mentioned(city, city_info):
+def validate_other_places_mentioned(city, other_places_info):
     """
-    Validates the 'Other Places Mentioned' column by checking if the value exists anywhere in the dataset.
+    Validates the 'Other Places Mentioned' column by checking city format and existence in a simplified dataset.
 
     Parameters:
     - city (str): City name(s) from the column, separated by '[|]'.
-    - city_info (dict): Dictionary containing city data for validation.
+    - other_places_info (set): A set of all unique city names (both English and Spanish) from the dataset.
 
     Returns:
     - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
@@ -439,36 +467,39 @@ def validate_other_places_mentioned(city, city_info):
     try:
         print(f"Debug: Starting validation for 'Other Places Mentioned' with value: '{city}'")
 
-        # Clean input
-        cleaned_city = str(city).strip()
-        print(f"Debug: Cleaned city value: '{cleaned_city}'")
-
-        # Split multiple entries using the separator '[|]'
-        entries = cleaned_city.split('[|]')
+        # Do not clean input; keep it as-is for exact matching
+        cities = city.split('[|]')
+        invalid_format = []
         not_found = []
 
-        # Flatten the dataset into a set of all possible values for quick lookup
-        all_valid_values = set()
-        for key, value in city_info.items():
-            all_valid_values.update(value.values())  # Combine all values in city_info into one set
+        # Improved regex to handle city names with optional state/region in parentheses
+        city_regex = re.compile(r"^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+(?:\s\([A-Za-zÁÉÍÓÚáéíóúñÑ\s.,]+\))?$")
 
-        for entry in entries:
-            entry = entry.strip()
+        for city in cities:
+            city = city.strip()  # Minimal stripping for internal validation purposes
 
-            # Check if the value exists anywhere in the dataset
-            if entry not in all_valid_values:
-                not_found.append(entry)
+            # Validate format
+            if not city_regex.match(city):
+                invalid_format.append(city)
+                continue
 
-        # Handle validation results
+            # Check existence in the simplified dataset
+            if city not in other_places_info:
+                not_found.append(city)
+
+        # Return results based on validation
+        if invalid_format:
+            return False, 'red', f"Invalid format for: {', '.join(invalid_format)}"
         if not_found:
-            return False, "yellow", f"Value(s) not found in the dataset: {', '.join(not_found)}"
+            return False, 'yellow', f"Value(s) not found in the dataset: {', '.join(not_found)}"
 
-        print(f"Debug: Validation passed for values '{cleaned_city}' in Other Places Mentioned.")
-        return True, "", "Valid values"
+        return True, None, "Validation passed"
 
     except Exception as e:
-        print(f"Error validating 'Other Places Mentioned' with value '{city}': {e}")
-        return False, "red", f"Error validating value: {e}"
+        print(f"Error during validation: {e}")
+        return False, 'red', "Error during validation"
+
+
 
 
 def is_valid_date(value):
@@ -1471,6 +1502,87 @@ def validate_oa_featured(value):
         print(f"Error validating OA_FEATURED value '{value}': {e}")
         return False, "red", f"Error validating OA_FEATURED value: {e}"
 
+def validate_full_folder_or_file_path(row):
+    """
+    Validates the FullFolderOrFilePath column for proper structure and naming conventions.
+
+    Parameters:
+    - row (pd.Series): The current row being validated.
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
+    """
+    try:
+        full_folder_value = row.get("FullFolderOrFilePath", "")
+        digital_identifier = row.get("DIGITAL_IDENTIFIER", "")
+
+        if pd.isna(full_folder_value) or str(full_folder_value).strip() == "":
+            return False, "yellow", "FullFolderOrFilePath is empty or missing."
+
+        if pd.isna(digital_identifier) or not isinstance(digital_identifier, str):
+            return False, "red", "Invalid or missing Digital Identifier."
+
+        # Parse the Digital Identifier
+        match = re.match(r"^(Ms\d{4})_(\d{2})_(\d{2})_(\d{2})\.pdf$", digital_identifier)
+        if not match:
+            return False, "red", f"Invalid Digital Identifier format: '{digital_identifier}'"
+
+        collection, box_number, folder_number, file_number = match.groups()
+
+        # Generate the expected path
+        expected_path = f"/Box_{box_number}/{box_number}_{folder_number}/{collection}_{box_number}_{folder_number}_{file_number}.pdf"
+
+        # Validate the value against the expected path
+        if str(full_folder_value).strip() != expected_path:
+            return False, "red", f"FullFolderOrFilePath does not match expected value: '{expected_path}'"
+
+        return True, None, "Valid FullFolderOrFilePath."
+
+    except Exception as e:
+        return False, "red", f"Error validating FullFolderOrFilePath: {e}"
+
+
+def validate_full_folder_or_file_path(full_folder_value, digital_identifier):
+    """
+    Validates the FullFolderOrFilePath column for proper structure and naming conventions.
+
+    Parameters:
+    - full_folder_value (str): The full folder or file path to validate.
+    - digital_identifier (str): The digital identifier to compare against.
+
+    Returns:
+    - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
+    """
+    try:
+        if pd.isna(full_folder_value) or str(full_folder_value).strip() == "":
+            return False, "yellow", "FullFolderOrFilePath is empty or missing."
+
+        if pd.isna(digital_identifier) or not isinstance(digital_identifier, str):
+            return False, "red", "Invalid or missing Digital Identifier."
+
+        # Parse the Digital Identifier
+        match = re.match(r"^(Ms\\d{4})_(\\d{2})_(\\d{2})_(\\d{2})\\.pdf$", digital_identifier)
+        if not match:
+            return False, "red", f"Invalid Digital Identifier format: '{digital_identifier}'"
+
+        collection, box_number, folder_number, file_number = match.groups()
+
+        # Generate the expected path
+        expected_path = f"/Box_{box_number}/{box_number}_{folder_number}/{collection}_{box_number}_{folder_number}_{file_number}.pdf"
+
+        # Validate the value against the expected path
+        if str(full_folder_value).strip() != expected_path:
+            return False, "red", f"FullFolderOrFilePath does not match expected value: '{expected_path}'"
+
+        return True, None, "Valid FullFolderOrFilePath."
+
+    except Exception as e:
+        return False, "red", f"Error validating FullFolderOrFilePath: {e}"
+
+
+
+        
+
 def load_authorized_names(names_dataset_path):
     names_data = pd.read_excel(names_dataset_path, usecols=[0], header=None)
     authorized_names = set(names_data[0].dropna().str.strip())
@@ -1504,6 +1616,7 @@ location_validation_rules = {
 approved_subjects = load_approved_subjects("SUBJECT_LCSH.xlsx")
 city_info = load_city_data("Maybeee.xlsx")
 authorized_names = load_authorized_names("CVPeople.xlsx")
+other_places_info = load_other_places("Maybeee.xlsx")  # New dictionary for 'Other Places Mentioned'
 print("Loaded authorized names:", authorized_names)
 
 # The `verify_file` function and main script setup remain the same, using `column_validation_rules`.
@@ -1736,6 +1849,20 @@ def verify_file(input_file, output_file):
             except Exception as e:
                 print(f"Error validating RELATIONSHIP1 and RELATIONSHIP2 at row {idx + 2}: {e}")
 
+        if "FullFolderOrFilePath" in df.columns and "DIGITAL_IDENTIFIER" in df.columns:
+            try:
+                is_valid, color, message = validate_full_folder_or_file_path(row)
+                if not is_valid:
+                    col_idx = df.columns.get_loc("FullFolderOrFilePath") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = (
+                        highlight_fill_red if color == "red" else highlight_fill_yellow
+                    )
+                    print(f"Failed validation: FullFolderOrFilePath at row {idx + 2} - Reason: {message}")
+                else:
+                    print(f"Validation successful: FullFolderOrFilePath at row {idx + 2}")
+            except Exception as e:
+                print(f"Error validating FullFolderOrFilePath at row {idx + 2}: {e}")
+
         if "ES..RELATIONSHIP1" in df.columns and "ES..RELATIONSHIP2" in df.columns:
             try:
                 is_valid, color, message = validate_relationships(
@@ -1753,16 +1880,14 @@ def verify_file(input_file, output_file):
             except Exception as e:
                 print(f"Error validating ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2}: {e}")
 
-        if "FullFolderOrFilePath" in df.columns:
-            full_folder_value = row["FullFolderOrFilePath"]
-            digital_identifier = row.get("DIGITAL_IDENTIFIER", "")
-
-            collection_identifier = (
-                digital_identifier.split("_")[0] if "_" in digital_identifier else digital_identifier
-            )
+        if "FullFolderOrFilePath" in df.columns and "DIGITAL_IDENTIFIER" in df.columns:
+            # Extract values from the row
+            full_folder_value = row["FullFolderOrFilePath"]  # Full folder or file path
+            digital_identifier = row["DIGITAL_IDENTIFIER"]  # Digital identifier
 
             try:
-                is_valid, color, message = validate_full_folder_or_file_path(full_folder_value, collection_identifier)
+                # Validate the FullFolderOrFilePath
+                is_valid, color, message = validate_full_folder_or_file_path(full_folder_value, digital_identifier)
                 if not is_valid:
                     col_idx = df.columns.get_loc("FullFolderOrFilePath") + 1
                     ws.cell(row=idx + 2, column=col_idx).fill = (
@@ -1778,18 +1903,16 @@ def verify_file(input_file, output_file):
       # Validate 'OTHER_PLACES_MENTIONED' and 'ES..OTHER_PLACES_MENTIONED' columns
         for col in ["OTHER_PLACES_MENTIONED", "ES..OTHER_PLACES_MENTIONED"]:
             if col in df.columns:
-                # Debugging log to confirm the column exists and the verification is starting
                 print(f"Debug: Starting verification for '{col}' column at row {idx + 2}")
 
                 value = row[col]
-                # Skip validation if the cell is empty
                 if pd.isna(value) or str(value).strip() == "":
                     print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
                     continue
 
                 try:
-                    # Use the validate function for city names
-                    is_valid, color, message = validate_other_places_mentioned(value, city_info)
+                    # Use the validate function for 'Other Places Mentioned'
+                    is_valid, color, message = validate_other_places_mentioned(value, other_places_info)
                     if is_valid:
                         print(f"Validation successful: {col} at row {idx + 2}")
                     else:
@@ -1799,8 +1922,8 @@ def verify_file(input_file, output_file):
                 except Exception as e:
                     print(f"Error validating {col} at row {idx + 2}: {e}")
             else:
-                # Debugging log to confirm the column is not found
                 print(f"Debug: Column '{col}' not found in dataset.")
+
 
         # Validate 'EXTENT' and 'ES..EXTENT' columns
         for col, lang in [("EXTENT", "english"), ("ES..EXTENT", "spanish")]:
