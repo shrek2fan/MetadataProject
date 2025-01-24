@@ -1,3 +1,48 @@
+# Copyright (C) 2025 Jason Ovalle
+# All rights reserved.
+# Unauthorized copying, modification, or distribution of this software, via any medium, is strictly prohibited.
+# Written by Jason Ovalle <jase.2188@gmail.com>, January 2025.
+
+
+"""
+
+Description:
+This program performs detailed metadata cleaning, processing, and verification for large Excel datasets.
+It integrates with pandas for efficient column-based transformations and openpyxl for maintaining Excel file formatting.
+The program supports various cleaning functions that ensure metadata consistency, proper formatting, and adherence to
+domain-specific rules.
+
+Inputs:
+- Excel files with metadata that need cleaning and validation.
+- Specific columns with formats and translations to be verified against defined rules and datasets.
+
+Outputs:
+- A cleaned Excel file that adheres to predefined metadata standards.
+- Optionally, a highlighted file that marks invalid cells (red/yellow) for review.
+
+Preconditions:
+- Input Excel files must have predefined columns for processing.
+- External datasets (e.g., SUBJECT_LCSH, city information) must be loaded correctly.
+
+Postconditions:
+- The output file will contain properly formatted and validated metadata, ready for upload.
+- Errors and mismatches are either corrected automatically or highlighted for manual review.
+
+Time Complexity:
+- Cleaning functions typically operate at O(n), where n is the number of rows in the Excel file.
+- Validation steps involving external datasets can reach O(n*m), where m is the size of the external dataset.
+
+Data Structures Used:
+- pandas DataFrame: For efficient column-wise operations and transformations.
+- Python dictionaries and lists: For auxiliary data processing and rule enforcement.
+- Regex patterns (compiled): For efficient string matching and substitution.
+
+Note:
+- The program is modular, allowing easy addition of new cleaning and validation functions.
+- Debugging output is reduced to essential information for seamless integration with existing pipelines.
+"""
+
+
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
@@ -5,22 +50,52 @@ import re
 import argparse
 import os
 import datetime 
-import logging
-import sys
 
-class PrintToLogger:
-    def __init__(self):
-        self.console = sys.stdout
+def setup_logging(input_file):
+    """
+    Sets up logging for a specific input file.
 
-    def write(self, message):
-        if message.strip():  # Avoid empty log entries
-            logging.info(message.strip())
+    Parameters:
+    - input_file (str): The name of the input Excel file being validated.
+
+    Returns:
+    - str: The log file name.
+    """
+    import logging
+    import os
+    import sys
+
+    log_file_name = f"{os.path.splitext(os.path.basename(input_file))[0]}_validation_log.txt"
+
+    # Clear existing handlers to avoid duplicating log entries
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    # Set up logging for the specific file
+    logging.basicConfig(
+        filename=log_file_name,
+        level=logging.DEBUG,
+        format="%(asctime)s - %(message)s",
+        filemode="w",  # Overwrite the log file for each run
+    )
+
+    # Reassign `sys.stdout` to log print statements
+    class PrintToLogger:
+        def __init__(self):
+            self.console = sys.stdout
+
+        def write(self, message):
+            if message.strip():  # Avoid empty log entries
+                logging.info(message.strip())
             self.console.write(message)
 
-    def flush(self):  # Required for Python's `sys.stdout`
-        pass
+        def flush(self):
+            pass  # Required for Python's `sys.stdout`
 
-sys.stdout = PrintToLogger()
+    sys.stdout = PrintToLogger()
+
+    return log_file_name
+
 
 # Define fill styles for highlighting mistakes
 highlight_fill_red = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
@@ -417,41 +492,6 @@ def validate_collection_number(value):
     else:
         print(f"Failed validation: Collection number '{cleaned_value}' is invalid.")
         return False, "red", f"Invalid collection number: Expected one of {valid_values}, but got '{cleaned_value}'"
-
-
-def validate_full_folder_or_file_path(value, collection_identifier):
-    """
-    Validates the FullFolderOrFilePath column for proper structure and naming conventions.
-
-    Parameters:
-    - value (str): The full folder or file path to validate.
-    - collection_identifier (str): The collection identifier (e.g., 'Ms0004', 'Ms0071').
-
-    Returns:
-    - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
-    """
-    try:
-        if pd.isna(value) or str(value).strip() == "":
-            return False, "yellow", "FullFolderOrFilePath is empty or missing."
-
-        # Define patterns for valid formats
-        standard_pattern = rf"^/Box_\d+/(\d+_\d+)/{collection_identifier}_\d+_\d+_\d+\.pdf$"
-        letter_suffix_pattern = rf"^/Box_\d+/(\d+_\d+)/{collection_identifier}_\d+_\d+_\d+[A-Z]\.pdf$"
-
-        # Validate against standard format
-        if re.match(standard_pattern, value.strip()):
-            return True, "", "Valid FullFolderOrFilePath."
-
-        # Validate against alternate format
-        if re.match(letter_suffix_pattern, value.strip()):
-            return False, "yellow", "Non-standard numbering in file name (e.g., '05A')."
-
-        # Invalid format
-        return False, "red", f"Invalid FullFolderOrFilePath format: '{value}'"
-    except Exception as e:
-        return False, "red", f"Error validating FullFolderOrFilePath: {e}"
-
-
 
 def validate_other_places_mentioned(city, other_places_info):
     """
@@ -1502,44 +1542,6 @@ def validate_oa_featured(value):
         print(f"Error validating OA_FEATURED value '{value}': {e}")
         return False, "red", f"Error validating OA_FEATURED value: {e}"
 
-def validate_full_folder_or_file_path(row):
-    """
-    Validates the FullFolderOrFilePath column for proper structure and naming conventions.
-
-    Parameters:
-    - row (pd.Series): The current row being validated.
-
-    Returns:
-    - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
-    """
-    try:
-        full_folder_value = row.get("FullFolderOrFilePath", "")
-        digital_identifier = row.get("DIGITAL_IDENTIFIER", "")
-
-        if pd.isna(full_folder_value) or str(full_folder_value).strip() == "":
-            return False, "yellow", "FullFolderOrFilePath is empty or missing."
-
-        if pd.isna(digital_identifier) or not isinstance(digital_identifier, str):
-            return False, "red", "Invalid or missing Digital Identifier."
-
-        # Parse the Digital Identifier
-        match = re.match(r"^(Ms\d{4})_(\d{2})_(\d{2})_(\d{2})\.pdf$", digital_identifier)
-        if not match:
-            return False, "red", f"Invalid Digital Identifier format: '{digital_identifier}'"
-
-        collection, box_number, folder_number, file_number = match.groups()
-
-        # Generate the expected path
-        expected_path = f"/Box_{box_number}/{box_number}_{folder_number}/{collection}_{box_number}_{folder_number}_{file_number}.pdf"
-
-        # Validate the value against the expected path
-        if str(full_folder_value).strip() != expected_path:
-            return False, "red", f"FullFolderOrFilePath does not match expected value: '{expected_path}'"
-
-        return True, None, "Valid FullFolderOrFilePath."
-
-    except Exception as e:
-        return False, "red", f"Error validating FullFolderOrFilePath: {e}"
 
 
 def validate_full_folder_or_file_path(full_folder_value, digital_identifier):
@@ -1554,30 +1556,45 @@ def validate_full_folder_or_file_path(full_folder_value, digital_identifier):
     - (bool, str, str): Validation status, highlight color ('red' or 'yellow'), and message.
     """
     try:
+        # Log the start of validation
+        print(f"Debug: Starting validation for FullFolderOrFilePath='{full_folder_value}' with DigitalIdentifier='{digital_identifier}'")
+
         if pd.isna(full_folder_value) or str(full_folder_value).strip() == "":
+            print(f"Debug: FullFolderOrFilePath is empty or missing. Value: '{full_folder_value}'")
             return False, "yellow", "FullFolderOrFilePath is empty or missing."
 
         if pd.isna(digital_identifier) or not isinstance(digital_identifier, str):
+            print(f"Debug: Digital Identifier is missing or invalid type. Value: '{digital_identifier}'")
             return False, "red", "Invalid or missing Digital Identifier."
 
         # Parse the Digital Identifier
-        match = re.match(r"^(Ms\\d{4})_(\\d{2})_(\\d{2})_(\\d{2})\\.pdf$", digital_identifier)
+        print(f"Debug: Parsing Digital Identifier='{digital_identifier}'")
+        match = re.match(r"^(Ms\d{4})_(\d{2})_(\d{2})_(\d{2})\.pdf$", digital_identifier)
         if not match:
+            print(f"Debug: Regex match failed for Digital Identifier='{digital_identifier}'")
             return False, "red", f"Invalid Digital Identifier format: '{digital_identifier}'"
 
+        # Log the captured groups
         collection, box_number, folder_number, file_number = match.groups()
+        print(f"Debug: Captured Groups -> Collection='{collection}', BoxNumber='{box_number}', FolderNumber='{folder_number}', FileNumber='{file_number}'")
 
         # Generate the expected path
         expected_path = f"/Box_{box_number}/{box_number}_{folder_number}/{collection}_{box_number}_{folder_number}_{file_number}.pdf"
+        print(f"Debug: Generated expected path='{expected_path}'")
 
         # Validate the value against the expected path
         if str(full_folder_value).strip() != expected_path:
+            print(f"Debug: FullFolderOrFilePath does not match expected path. Given='{full_folder_value}', Expected='{expected_path}'")
             return False, "red", f"FullFolderOrFilePath does not match expected value: '{expected_path}'"
 
+        # Log successful validation
+        print(f"Debug: Validation successful for FullFolderOrFilePath='{full_folder_value}'")
         return True, None, "Valid FullFolderOrFilePath."
 
     except Exception as e:
+        print(f"Debug: Exception occurred during validation. Error: {e}")
         return False, "red", f"Error validating FullFolderOrFilePath: {e}"
+
 
 
 
@@ -1675,7 +1692,33 @@ def verify_file(input_file, output_file):
                             print(f"Failed validation: {col_name} at row {idx + 2} - Reason: {message}")
                 except Exception as e:
                     print(f"Error validating {col_name} at row {idx + 2}: {e}")
+
+
+    # FullFolderOrFilePath Validation
+        if "FullFolderOrFilePath" in df.columns and "DIGITAL_IDENTIFIER" in df.columns:
+            # Ensure digital_identifier is defined
+            digital_identifier = row["DIGITAL_IDENTIFIER"]
+            full_folder_value = row["FullFolderOrFilePath"]
+
+            print(f"Debug: Reached FullFolderOrFilePath validation for row {idx + 2}")
+            print(f"Debug: Validating FullFolderOrFilePath='{full_folder_value}' with DigitalIdentifier='{digital_identifier}' at row {idx + 2}")
+
+            try:
+                is_valid, color, message = validate_full_folder_or_file_path(full_folder_value, digital_identifier)
+                print(f"Debug: Validation result for row {idx + 2}: is_valid={is_valid}, color={color}, message={message}")
+
+                if not is_valid:
+                    col_idx = df.columns.get_loc("FullFolderOrFilePath") + 1
+                    ws.cell(row=idx + 2, column=col_idx).fill = (
+                        highlight_fill_red if color == "red" else highlight_fill_yellow
+                    )
+                    print(f"Failed validation: FullFolderOrFilePath at row {idx + 2} - Reason: {message}")
+                else:
+                    print(f"Validation successful: FullFolderOrFilePath at row {idx + 2}")
+            except Exception as e:
+                print(f"Error validating FullFolderOrFilePath at row {idx + 2}: {e}")
         
+
         # Validate SERIES and ES..SERIES columns
         if "SERIES" in df.columns:
             value = row["SERIES"]
@@ -1849,20 +1892,6 @@ def verify_file(input_file, output_file):
             except Exception as e:
                 print(f"Error validating RELATIONSHIP1 and RELATIONSHIP2 at row {idx + 2}: {e}")
 
-        if "FullFolderOrFilePath" in df.columns and "DIGITAL_IDENTIFIER" in df.columns:
-            try:
-                is_valid, color, message = validate_full_folder_or_file_path(row)
-                if not is_valid:
-                    col_idx = df.columns.get_loc("FullFolderOrFilePath") + 1
-                    ws.cell(row=idx + 2, column=col_idx).fill = (
-                        highlight_fill_red if color == "red" else highlight_fill_yellow
-                    )
-                    print(f"Failed validation: FullFolderOrFilePath at row {idx + 2} - Reason: {message}")
-                else:
-                    print(f"Validation successful: FullFolderOrFilePath at row {idx + 2}")
-            except Exception as e:
-                print(f"Error validating FullFolderOrFilePath at row {idx + 2}: {e}")
-
         if "ES..RELATIONSHIP1" in df.columns and "ES..RELATIONSHIP2" in df.columns:
             try:
                 is_valid, color, message = validate_relationships(
@@ -1879,25 +1908,6 @@ def verify_file(input_file, output_file):
                     print(f"Failed validation: ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2} - Reason: {message}")
             except Exception as e:
                 print(f"Error validating ES..RELATIONSHIP1 and ES..RELATIONSHIP2 at row {idx + 2}: {e}")
-
-        if "FullFolderOrFilePath" in df.columns and "DIGITAL_IDENTIFIER" in df.columns:
-            # Extract values from the row
-            full_folder_value = row["FullFolderOrFilePath"]  # Full folder or file path
-            digital_identifier = row["DIGITAL_IDENTIFIER"]  # Digital identifier
-
-            try:
-                # Validate the FullFolderOrFilePath
-                is_valid, color, message = validate_full_folder_or_file_path(full_folder_value, digital_identifier)
-                if not is_valid:
-                    col_idx = df.columns.get_loc("FullFolderOrFilePath") + 1
-                    ws.cell(row=idx + 2, column=col_idx).fill = (
-                        highlight_fill_red if color == "red" else highlight_fill_yellow
-                    )
-                    print(f"Failed validation: FullFolderOrFilePath at row {idx + 2} - Reason: {message}")
-                else:
-                    print(f"Validation successful: FullFolderOrFilePath at row {idx + 2}")
-            except Exception as e:
-                print(f"Error validating FullFolderOrFilePath at row {idx + 2}: {e}")
 
 
       # Validate 'OTHER_PLACES_MENTIONED' and 'ES..OTHER_PLACES_MENTIONED' columns
@@ -2365,7 +2375,7 @@ def verify_file(input_file, output_file):
     print(f"Verification completed. Output saved as {output_file}")
 
 if __name__ == "__main__":
-    import logging
+    import argparse
 
     # Set up argument parser to take input file
     parser = argparse.ArgumentParser(description="Verify an Excel file against validation rules.")
@@ -2376,35 +2386,8 @@ if __name__ == "__main__":
     input_file = args.file_name
     output_file = f"Verified_{os.path.basename(input_file)}"
 
-    # Dynamically set up logging for this specific file
-    log_file_name = f"{os.path.splitext(os.path.basename(input_file))[0]}_validation_log.txt"
-
-    # Clear existing handlers to avoid duplicating log entries
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
-
-    # Set up logging for the specific file
-    logging.basicConfig(
-        filename=log_file_name,
-        level=logging.DEBUG,
-        format="%(asctime)s - %(message)s",
-        filemode="w",  # Overwrite the log file for each run
-    )
-
-    # Reassign `sys.stdout` to log all print statements to the file-specific log
-    class PrintToLogger:
-        def __init__(self):
-            self.console = sys.stdout
-
-        def write(self, message):
-            if message.strip():  # Avoid empty log entries
-                logging.info(message.strip())
-            self.console.write(message)
-
-        def flush(self):
-            pass  # Required for Python's `sys.stdout`
-
-    sys.stdout = PrintToLogger()
+    # Set up logging
+    log_file_name = setup_logging(input_file)
 
     # Run verification for the input file
     verify_file(input_file, output_file)
@@ -2413,3 +2396,8 @@ if __name__ == "__main__":
     print(f"Validation log written to: {log_file_name}")
     print(f"Verified file written to: {output_file}")
 
+
+# Copyright (C) 2025 Jason Ovalle
+# All rights reserved.
+# Unauthorized copying, modification, or distribution of this software, via any medium, is strictly prohibited.
+# Written by Jason Ovalle <jase.2188@gmail.com>, January 2025.
