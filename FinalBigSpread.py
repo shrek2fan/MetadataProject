@@ -402,55 +402,72 @@ location_validation_rules = {
     "ES..ADDRESSEES_CITY": lambda row: is_valid_city_related(row, 'ES..ADDRESSEES_CITY', 'ES..ADDRESSEES_COUNTRY', 'ES..ADDRESSEES_STATE', 'ES..GEOLOC_SCITY', 'spanish')
 }
 
-def validate_digital_identifier(value, previous_identifier=None):
+def validate_digital_identifier(value, fullfolderfilepath, seen_identifiers=None):
     """
-    Validate the DIGITAL_IDENTIFIER format for either 'Ms0004_XX_XX_XX.pdf' or 'Ms0071_XX_XX_XX.pdf' pattern.
-    The format must follow 'Ms0004_<BoxNumber>_<FolderNumber>_<LetterNumber>.pdf' or 'Ms0071_<BoxNumber>_<FolderNumber>_<LetterNumber>.pdf'.
-    The BoxNumber and FolderNumber should remain consistent in sequence, and
-    LetterNumber should increment by 1 starting from '01' at row 2.
-
+    Validate the DIGITAL_IDENTIFIER format.
+    
+    - Ensures the format matches the expected pattern.
+    - Ensures the identifier matches its FullFolderOrFilePath value.
+    - Ensures each LetterNumber appears only once per Box/Folder.
+    
     Parameters:
     - value (str): The identifier to validate.
-    - previous_identifier (tuple): The collection, box, folder, and letter numbers of the previous identifier.
+    - fullfolderfilepath (str): The expected identifier from FullFolderOrFilePath.
+    - seen_identifiers (dict): A dictionary tracking seen letter-number combinations.
 
     Returns:
-    - (bool, tuple, str): Validation status, updated identifier, and message.
+    - (bool, str, str): Validation status, updated identifier tracking, and message.
     """
     if not isinstance(value, str):
-        return False, "red", "Invalid type: Expected a string"
+        return False, None, "Invalid type: Expected a string"
+    
+    # If fullfolderfilepath is empty, it should be flagged as an issue but not processed further
+    if fullfolderfilepath is not None:
+                print(f"Extracting FullFolderOrFilePath: '{fullfolderfilepath}'")
+    if fullfolderfilepath is not None:
+        fullfolderfilepath = str(fullfolderfilepath).strip()
+    else:
+        print("Row information unavailable in this function scope")
+        print("FullFolderOrFilePath is None at this row")
+    if fullfolderfilepath:
+        print(f"Extracted FullFolderOrFilePath: '{fullfolderfilepath}'")
+    else:
+        if fullfolderfilepath is None:
+            print("No FullFolderOrFilePath extracted: Value is None")
+        elif isinstance(fullfolderfilepath, float) and pd.isna(fullfolderfilepath):
+            print("No FullFolderOrFilePath extracted: Value is NaN")
+        elif fullfolderfilepath.strip() == "":
+            print("No FullFolderOrFilePath extracted: Value is an empty string")
+        else:
+            print("No FullFolderOrFilePath extracted: Unknown formatting issue") if fullfolderfilepath else ("No FullFolderOrFilePath extracted: Possible missing value or formatting issue")
+    if not isinstance(fullfolderfilepath, str) or pd.isna(fullfolderfilepath) or fullfolderfilepath == "": 
+        return False, None, "FullFolderOrFilePath is missing - should be highlighted separately"
 
     # Check format: Ms0004_XX_XX_XX.pdf or Ms0071_XX_XX_XX.pdf
     match = re.match(r"^(Ms0004|Ms0071)_(\d{2})_(\d{2})_(\d{2})\.pdf$", value)
     if not match:
-        return False, "red", "Incorrect format. Expected 'Ms0004_XX_XX_XX.pdf' or 'Ms0071_XX_XX_XX.pdf' where XX are two-digit numbers"
+        return False, None, "Incorrect format. Expected 'Ms0004_XX_XX_XX.pdf' or 'Ms0071_XX_XX_XX.pdf'"
 
-    # Extract Collection, BoxNumber, FolderNumber, and LetterNumber
-    collection, box_number, folder_number, letter_number = match.groups()
+    # Extract BoxNumber, FolderNumber, and LetterNumber
+    _, box_number, folder_number, letter_number = match.groups()
+    key = f"{box_number}_{folder_number}_{letter_number}"
 
-    # Convert letter_number to an integer for comparison
-    current_letter_number = int(letter_number)
+    # Ensure the identifier matches its own FullFolderOrFilePath value
+    if fullfolderfilepath and fullfolderfilepath != value:
+        return False, None, f"Mismatch with FullFolderOrFilePath. Expected {fullfolderfilepath}"
 
-    # Check if this is the first identifier in the series (should be 01 at row 2)
-    if previous_identifier is None:
-        if current_letter_number != 1:
-            return False, "red", "First letter number must start with 01"
-        # Set initial tracking for the next row to increment from here
-        return True, (collection, box_number, folder_number, current_letter_number), "Valid"
+    # Check for duplicate letter number within the same Box/Folder
+    if seen_identifiers is None:
+        seen_identifiers = {}
 
-    # Unpack previous identifier
-    prev_collection, prev_box, prev_folder, prev_letter = previous_identifier
+    if key in seen_identifiers:
+        return False, None, f"Duplicate identifier {letter_number} in Box {box_number}, Folder {folder_number}"
+    else:
+        seen_identifiers[key] = True
 
-    # Verify that Collection, BoxNumber, and FolderNumber match the previous identifier's values
-    if collection != prev_collection or box_number != prev_box or folder_number != prev_folder:
-        return False, "red", f"Box or folder number mismatch. Expected '{prev_box}_{prev_folder}' but got '{box_number}_{folder_number}'"
+    return True, key, "Valid"
 
-    # Calculate the next expected letter number, which should simply be previous letter + 1
-    expected_letter_number = prev_letter + 1
-    if current_letter_number != expected_letter_number:
-        return False, "red", f"Letter number must increment sequentially. Expected {str(expected_letter_number).zfill(2)} but got {letter_number}"
 
-    # If all checks pass, update previous identifier tracking and mark as valid
-    return True, (collection, box_number, folder_number, current_letter_number), "Valid"
 
 def is_valid_box_folder(value):
     if not isinstance(value, str):
@@ -1594,7 +1611,14 @@ def validate_full_folder_or_file_path(full_folder_value, digital_identifier):
     except Exception as e:
         print(f"Debug: Exception occurred during validation. Error: {e}")
         return False, "red", f"Error validating FullFolderOrFilePath: {e}"
+    
 
+
+def clean_closing_text(text):
+    """Removes periods from the given text, keeping other punctuation intact."""
+    if pd.isna(text):
+        return text
+    return text.replace('.', '')
 
 
 
@@ -1661,7 +1685,14 @@ def verify_file(input_file, output_file):
                 try:
                     # Special handling for DIGITAL_IDENTIFIER to track sequence
                     if col_name == "DIGITAL_IDENTIFIER":
-                        is_valid, result, message = validate_digital_identifier(value, previous_identifier_digital)
+                        fullfolderfilepath = row.get("FullFolderOrFilePath", None)
+                        if fullfolderfilepath:
+                            parts = fullfolderfilepath.split("/")
+                            if len(parts) > 3:
+                                fullfolderfilepath = parts[3]
+                            else:
+                                fullfolderfilepath = None
+                        is_valid, result, message = validate_digital_identifier(value, fullfolderfilepath, previous_identifier_digital)
                         if is_valid:
                             previous_identifier_digital = result  # Update tracking for next row
                             print(f"Validation successful: {col_name} at row {idx + 2}")
@@ -1672,7 +1703,14 @@ def verify_file(input_file, output_file):
                             print(f"Failed validation: {col_name} at row {idx + 2} - Reason: {message}")
                     
                     elif col_name == "ES..DIGITAL_IDENTIFIER":
-                        is_valid, result, message = validate_digital_identifier(value, previous_identifier_es_digital)
+                        fullfolderfilepath = row.get("FullFolderOrFilePath", None)
+                        if fullfolderfilepath:
+                            parts = fullfolderfilepath.split("/")
+                            if len(parts) > 3:
+                                fullfolderfilepath = parts[3]
+                            else:
+                                fullfolderfilepath = None
+                        is_valid, result, message = validate_digital_identifier(value, fullfolderfilepath, previous_identifier_es_digital)
                         if is_valid:
                             previous_identifier_es_digital = result  # Update tracking for next row
                             print(f"Validation successful: {col_name} at row {idx + 2}")
@@ -2336,6 +2374,17 @@ def verify_file(input_file, output_file):
                 print(f"Error validating OA_METADATA_SCHEMA at row {idx + 2}: {e}")
         else:
             print("Debug: Column 'OA_METADATA_SCHEMA' not found in dataset.")
+
+
+       # Apply function directly to the entire column
+        if "CLOSING" in df.columns:
+            print("Applying clean_closing_text() to CLOSING column...")
+            df["CLOSING"] = df["CLOSING"].apply(clean_closing_text)
+
+        if "ES..CLOSING" in df.columns:
+            print("Applying clean_closing_text() to ES..CLOSING column...")
+            df["ES..CLOSING"] = df["ES..CLOSING"].apply(clean_closing_text)
+
 
         # Validate 'OA_FEATURED' column
         if "OA_FEATURED" in df.columns:
