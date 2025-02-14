@@ -1611,18 +1611,8 @@ def validate_full_folder_or_file_path(full_folder_value, digital_identifier):
     except Exception as e:
         print(f"Debug: Exception occurred during validation. Error: {e}")
         return False, "red", f"Error validating FullFolderOrFilePath: {e}"
-    
 
 
-def clean_closing_text(text):
-    """Removes periods from the given text, keeping other punctuation intact."""
-    if pd.isna(text):
-        return text
-    return text.replace('.', '')
-
-
-
-        
 
 def load_authorized_names(names_dataset_path):
     names_data = pd.read_excel(names_dataset_path, usecols=[0], header=None)
@@ -1654,10 +1644,10 @@ location_validation_rules = {
     "ES..ADDRESSEES_CITY": lambda row: is_valid_city_related(row, 'ES..ADDRESSEES_CITY', 'ES..ADDRESSEES_COUNTRY', 'ES..ADDRESSEES_STATE', 'ES..GEOLOC_SCITY', 'spanish')
 }
 
-approved_subjects = load_approved_subjects("SUBJECT_LCSH.xlsx")
-city_info = load_city_data("Maybeee.xlsx")
-authorized_names = load_authorized_names("CVPeople.xlsx")
-other_places_info = load_other_places("Maybeee.xlsx")  # New dictionary for 'Other Places Mentioned'
+approved_subjects = load_approved_subjects("SUBJECT_LCSHDataSet.xlsx")
+city_info = load_city_data("LocationCoordinatesDataSet.xlsx")
+authorized_names = load_authorized_names("CVPeopleDataSet.xlsx")
+other_places_info = load_other_places("LocationCoordinatesDataSet.xlsx")  # New dictionary for 'Other Places Mentioned'
 print("Loaded authorized names:", authorized_names)
 
 # The `verify_file` function and main script setup remain the same, using `column_validation_rules`.
@@ -1866,6 +1856,7 @@ def verify_file(input_file, output_file):
                     print(f"Failed validation: ES..DATE at row {idx + 2} - Reason: {message}")
             except Exception as e:
                 print(f"Error validating ES..DATE at row {idx + 2}: {e}")
+
 
        # Validate YEAR column
         if "YEAR" in df.columns and "DATE" in df.columns:
@@ -2177,6 +2168,18 @@ def verify_file(input_file, output_file):
                     continue
 
                 try:
+                    if '[|]' in str(value):
+                        terms = str(value).split('[|]')
+                        all_valid = all(validate_medium(term.strip(), lang)[0] for term in terms)
+                        if not all_valid:
+                            col_idx = df.columns.get_loc(col) + 1
+                            ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                            print(f"Failed validation: {col} at row {idx + 2} - Contains invalid term(s).")
+                        else:
+                            print(f"Validation successful: {col} at row {idx + 2} (multiple terms)")
+                        continue  # Skip further validation as it's already handled
+            
+
                     is_valid, color, message = validate_medium(value, lang)
                     if is_valid:
                         print(f"Validation successful: {col} at row {idx + 2}")
@@ -2200,7 +2203,21 @@ def verify_file(input_file, output_file):
                     print(f"Debug: '{col}' at row {idx + 2} is empty. Skipping validation.")
                     continue
 
-                try:
+                try:     # Handle multiple terms separated by '[|]'
+                    if '[|]' in str(value):
+                        terms = str(value).split('[|]')
+                        all_valid = all(validate_genre(term.strip(), lang)[0] for term in terms)
+                        if not all_valid:
+                            col_idx = df.columns.get_loc(col) + 1
+                            ws.cell(row=idx + 2, column=col_idx).fill = highlight_fill_red
+                            print(f"Failed validation: {col} at row {idx + 2} - Contains invalid term(s).")
+                        else:
+                            print(f"Validation successful: {col} at row {idx + 2} (multiple terms)")
+                        continue  # Skip further validation as it's already handled
+                        
+    
+
+                    
                     is_valid, color, message = validate_genre(value, lang)
                     if is_valid:
                         print(f"Validation successful: {col} at row {idx + 2}")
@@ -2374,16 +2391,6 @@ def verify_file(input_file, output_file):
                 print(f"Error validating OA_METADATA_SCHEMA at row {idx + 2}: {e}")
         else:
             print("Debug: Column 'OA_METADATA_SCHEMA' not found in dataset.")
-
-
-       # Apply function directly to the entire column
-        if "CLOSING" in df.columns:
-            print("Applying clean_closing_text() to CLOSING column...")
-            df["CLOSING"] = df["CLOSING"].apply(clean_closing_text)
-
-        if "ES..CLOSING" in df.columns:
-            print("Applying clean_closing_text() to ES..CLOSING column...")
-            df["ES..CLOSING"] = df["ES..CLOSING"].apply(clean_closing_text)
 
 
         # Validate 'OA_FEATURED' column
