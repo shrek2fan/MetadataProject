@@ -50,6 +50,8 @@ import re
 import argparse
 import os
 import datetime 
+import unicodedata
+import logging
 
 def setup_logging(input_file):
     """
@@ -95,6 +97,61 @@ def setup_logging(input_file):
     sys.stdout = PrintToLogger()
 
     return log_file_name
+
+
+
+def normalize_unicode(text):
+    """Normalize Unicode text to NFC (precomposed form)."""
+    return unicodedata.normalize('NFC', text) if text else text
+
+
+
+def is_valid_city_related(row, city_column, country_column, state_column, coord_column, language):
+    city = normalize_unicode(str(row.get(city_column, '')).strip().lower()) if pd.notna(row.get(city_column)) else ''
+    country = normalize_unicode(row.get(country_column, '').strip()) if pd.notna(row.get(country_column)) else ''
+    state = normalize_unicode(row.get(state_column, '').strip()) if pd.notna(row.get(state_column)) else ''
+    coordinates = normalize_unicode(row.get(coord_column, '').strip()) if pd.notna(row.get(coord_column)) else ''
+
+    print(f"Debug: Validating city '{city}', country '{country}', state '{state}', coordinates '{coordinates}'")
+
+    if not city or city == "no data":
+        return True, "", "", "City data missing or marked as 'no data'"
+
+    city_key = (city, language)
+    expected_data = city_info.get(city_key)
+
+    if not expected_data:
+        return False, "yellow", city_column, f"City '{city}' not found in dataset for language '{language}'"
+
+    expected_country = normalize_unicode(expected_data['country'])
+    expected_state = normalize_unicode(expected_data['state'])
+    expected_coords = normalize_unicode(expected_data['coordinates'])
+
+    if country and country != expected_country:
+        return False, "red", country_column, f"Country mismatch: Expected '{expected_country}', found '{country}'"
+    
+    #  LOG UNICODE DEBUGGING WITH PRINT() FOR LOG FILE
+    print(f"Debug: Checking Unicode Normalization for State:")
+    print(f"Expected: '{expected_state}' -> Unicode: {[hex(ord(c)) for c in expected_state]}")
+    print(f"Found: '{state}' -> Unicode: {[hex(ord(c)) for c in state]}")
+
+    if state and state != expected_state:
+        return False, "red", state_column, f"State mismatch: Expected '{expected_state}', found '{state}'"
+
+    # Validate coordinates
+    coord_sets = coordinates.split("[|]")
+    matched_coords = [actual_coords.strip() for actual_coords in coord_sets if actual_coords.strip() == expected_coords]
+
+    if not matched_coords:
+        return False, "red", coord_column, f"No matching coordinates found for '{city}' with expected value '{expected_coords}'"
+
+    if len(coord_sets) == 2 and coordinates != f"{coord_sets[0].strip()}[|]{coord_sets[1].strip()}":
+        return False, "red", coord_column, "Coordinate format error: Incorrect '[|]' separator for dual coordinates."
+
+    print("Debug: Location data matches expected values; validation passed.")
+    return True, "", "", "Location data matches expected values"
+
+
 
 
 # Define fill styles for highlighting mistakes
