@@ -105,6 +105,67 @@ def normalize_unicode(text):
     return unicodedata.normalize('NFC', text) if text else text
 
 
+def clean_no_data(df):
+    """
+    Cleans 'no data' occurrences from the entire DataFrame.
+    
+    - Any cell containing 'no data' (case-insensitive) will be replaced with an empty string.
+    
+    Parameters:
+    - df (pd.DataFrame): The DataFrame to clean.
+    
+    Returns:
+    - pd.DataFrame: The cleaned DataFrame.
+    """
+    df = df.applymap(lambda x: "" if isinstance(x, str) and x.strip().lower() == "no data" else x)
+    return df
+
+
+def preprocess_file(input_file, output_file):
+    """
+    Cleans 'no data' from the Excel file before validation starts.
+    - Loads the file into a DataFrame.
+    - Removes all occurrences of 'no data' (case insensitive).
+    - Saves the cleaned file back before validation runs.
+    - Ensures changes persist by forcing an overwrite.
+
+    Parameters:
+    - input_file (str): The path to the input Excel file.
+    - output_file (str): The path to save the cleaned file.
+    """
+    print(f"--- Preprocessing file: {input_file} ---")
+
+    # Load the Excel file
+    df = pd.read_excel(input_file, engine="openpyxl")
+    print(f"Original dataset loaded: {df.shape[0]} rows, {df.shape[1]} columns")
+
+    # Check occurrences of "no data" before cleaning
+    no_data_before = (df.applymap(lambda x: isinstance(x, str) and "no data" in x.lower())).sum().sum()
+    print(f"Occurrences of 'no data' before cleaning: {no_data_before}")
+
+    # Apply cleaning
+    df = clean_no_data(df)
+
+    # Verify cleaning
+    no_data_after = (df.applymap(lambda x: isinstance(x, str) and "no data" in x.lower())).sum().sum()
+    print(f"Occurrences of 'no data' after cleaning: {no_data_after}")
+
+    if no_data_after == 0:
+        print("✅ Success: All 'no data' values removed.")
+    else:
+        print(f"⚠ Warning: {no_data_after} 'no data' values still present after cleaning!")
+
+    # Ensure the file is fully overwritten
+    if os.path.exists(output_file):
+        os.remove(output_file)  # Delete the old file before saving the cleaned version
+
+    # Save cleaned data
+    df.to_excel(output_file, index=False, engine="openpyxl")
+    print(f"✅ Cleaned data saved to: {output_file}")
+    print("--- Preprocessing Complete ---\n")
+
+
+
 
 def is_valid_city_related(row, city_column, country_column, state_column, coord_column, language):
     city = normalize_unicode(str(row.get(city_column, '')).strip().lower()) if pd.notna(row.get(city_column)) else ''
@@ -1710,15 +1771,32 @@ print("Loaded authorized names:", authorized_names)
 # The `verify_file` function and main script setup remain the same, using `column_validation_rules`.
 
 def verify_file(input_file, output_file):
-   # Load the workbook
-    wb = load_workbook(input_file)
+    print(f"=== Starting verification for: {input_file} ===\n")
 
-    # Get the first sheet name dynamically
+    # Step 1: Preprocess file to remove 'no data'
+    preprocess_file(input_file, output_file)
+
+    # Step 2: Load the cleaned file for validation (DO NOT reload the original)
+    df = pd.read_excel(output_file, engine="openpyxl")
+    print(f"✅ Reloaded cleaned dataset: {df.shape[0]} rows, {df.shape[1]} columns")
+
+    # Final check before validation
+    no_data_check = (df.applymap(lambda x: isinstance(x, str) and "no data" in x.lower())).sum().sum()
+    print(f"🔍 Final 'no data' check before validation: {no_data_check} occurrences found\n")
+
+    if no_data_check == 0:
+        print("✅ All 'no data' values successfully removed before validation.")
+    else:
+        print(f"⚠ Warning: {no_data_check} 'no data' values still present before validation!")
+
+    print("=== Validation Process Begins ===\n")
+
+    # Step 3: Load the cleaned workbook (output_file) for validation/highlighting
+    wb = load_workbook(output_file)
     sheet_name = wb.sheetnames[0]
-
-    # Load the first sheet
-    ws = wb[sheet_name]
-    df = pd.read_excel(input_file, sheet_name=sheet_name)
+    ws = wb[sheet_name]  # Load sheet
+    
+ 
 
     # Initialize previous identifiers separately for each column
     previous_identifier_digital = None  # For DIGITAL_IDENTIFIER column
@@ -2482,6 +2560,8 @@ def verify_file(input_file, output_file):
                         print(f"Failed location validation: {loc_col_name} at row {idx + 2} - Reason: {message}")
                 except Exception as e:
                     print(f"Error in location validation for {loc_col_name} at row {idx + 2}: {e}")
+
+
 
     # Save the workbook after validation and highlighting
     wb.save(output_file)
