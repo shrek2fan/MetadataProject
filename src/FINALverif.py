@@ -4,7 +4,10 @@ from openpyxl.styles import PatternFill
 import re
 import argparse
 import os
-import datetime 
+import datetime
+from pathlib import Path
+
+DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
 # Define fill styles for highlighting mistakes
 highlight_fill_red = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
@@ -1487,9 +1490,9 @@ location_validation_rules = {
 
 
 
-approved_subjects = load_approved_subjects("SUBJECT_LCSH.xlsx")
-city_info = load_city_data("Maybeee.xlsx")
-authorized_names = load_authorized_names("CVPeople.xlsx")
+approved_subjects = load_approved_subjects(str(DATA_DIR / "SUBJECT_LCSH.xlsx"))
+city_info = load_city_data(str(DATA_DIR / "Maybeee.xlsx"))
+authorized_names = load_authorized_names(str(DATA_DIR / "CVPeople.xlsx"))
 print("Loaded authorized names:", authorized_names)
 
 # The `verify_file` function and main script setup remain the same, using `column_validation_rules`.

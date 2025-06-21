@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
-from FinalBigSpread import verify_file, setup_logging  #
+from .FinalBigSpread import verify_file, setup_logging
 
 
 def generate_output_filename(input_file):
