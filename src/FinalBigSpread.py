@@ -52,6 +52,9 @@ import os
 import datetime 
 import unicodedata
 import logging
+from pathlib import Path
+
+DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
 def setup_logging(input_file):
     """
@@ -1762,10 +1765,10 @@ location_validation_rules = {
     "ES..ADDRESSEES_CITY": lambda row: is_valid_city_related(row, 'ES..ADDRESSEES_CITY', 'ES..ADDRESSEES_COUNTRY', 'ES..ADDRESSEES_STATE', 'ES..GEOLOC_SCITY', 'spanish')
 }
 
-approved_subjects = load_approved_subjects("SUBJECT_LCSHDataSet.xlsx")
-city_info = load_city_data("LocationCoordinatesDataSet.xlsx")
-authorized_names = load_authorized_names("CVPeopleDataSet.xlsx")
-other_places_info = load_other_places("LocationCoordinatesDataSet.xlsx")  # New dictionary for 'Other Places Mentioned'
+approved_subjects = load_approved_subjects(str(DATA_DIR / "SUBJECT_LCSHDataSet.xlsx"))
+city_info = load_city_data(str(DATA_DIR / "LocationCoordinatesDataSet.xlsx"))
+authorized_names = load_authorized_names(str(DATA_DIR / "CVPeopleDataSet.xlsx"))
+other_places_info = load_other_places(str(DATA_DIR / "LocationCoordinatesDataSet.xlsx"))  # New dictionary for 'Other Places Mentioned'
 print("Loaded authorized names:", authorized_names)
 
 # The `verify_file` function and main script setup remain the same, using `column_validation_rules`.

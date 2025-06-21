@@ -4,6 +4,9 @@ import re
 import os
 import argparse
 import unicodedata
+from pathlib import Path
+
+DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
 # Compiling regular expressions used throughout the script
 box_folder_regex = re.compile(r'[^\d_]')  # Regex to clean up BOX_FOLDER, allows only digits and underscores
@@ -30,7 +33,7 @@ xls = pd.ExcelFile(file_path)
 cleaned_sheets = {}
 
 # Load the known proper names from the Excel file
-proper_names_df = pd.read_excel('ProperNames.xlsx')  # Adjust file path as needed
+proper_names_df = pd.read_excel(DATA_DIR / 'ProperNames.xlsx')
 proper_names_list = proper_names_df['PROPER AUTHORIZED NAMES'].str.strip().tolist()  # Create a list of proper names
 
 def ensure_series(col):
